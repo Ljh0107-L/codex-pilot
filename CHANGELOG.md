@@ -1,10 +1,10 @@
 # Changelog
 
-Codex Pilot release tags use this format:
+Codex Pilot release tags use the upstream-compatible Rust release format:
 
-`<openai-codex-version>-pilot.<codex-pilot-version>`
+`rust-v<codex-pilot-version>`
 
-For example, `0.128.0-pilot.1.0.0` means the release is based on OpenAI Codex `0.128.0` and includes Codex Pilot `1.0.0` changes.
+For example, `rust-v1.0.0` publishes Codex Pilot `1.0.0`. The OpenAI Codex base for each release is recorded in that release's `Base` section.
 
 ## 1.0.0 - 2026-05-07
 
@@ -26,6 +26,7 @@ For example, `0.128.0-pilot.1.0.0` means the release is based on OpenAI Codex `0
 - Updated PromptPilot to use supported `medium` reasoning and keep interpreted intent/enhanced prompts in the original prompt's primary language.
 - Prepared npm packaging under `@ljh0107-l/codex-pilot` with scoped native optional package aliases.
 - Adjusted fork CI so pull requests do not depend on OpenAI-internal runners, paid macOS xlarge runners, or BuildBuddy credentials.
+- Forked the release workflow for unsigned Codex Pilot release artifacts and gated automatic npm publishing behind `PUBLISH_NPM=true`.
 
 ### Not Changed
 
