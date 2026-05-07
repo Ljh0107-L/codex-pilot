@@ -27,6 +27,7 @@ For example, `rust-v1.0.0` publishes Codex Pilot `1.0.0`. The OpenAI Codex base 
 - Prepared npm packaging under `@ljh0107-l/codex-pilot` with scoped native optional package aliases.
 - Adjusted fork CI so pull requests do not depend on OpenAI-internal runners, paid macOS xlarge runners, or BuildBuddy credentials.
 - Forked the release workflow for unsigned Codex Pilot release artifacts and gated automatic npm publishing behind `PUBLISH_NPM=true`.
+- Focused the initial npm release on CLI packages for Linux, macOS, and Windows x64; Windows ARM64 packaging is deferred.
 
 ### Not Changed
 

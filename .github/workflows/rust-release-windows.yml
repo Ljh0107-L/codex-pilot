@@ -13,7 +13,7 @@ jobs:
     runs-on: ${{ matrix.runs_on }}
     # Windows release builds can exceed an hour on fat-LTO mainline releases,
     # so keep the timeout aligned with the top-level release build headroom.
-    timeout-minutes: 90
+    timeout-minutes: 180
     permissions:
       contents: read
     defaults:
@@ -29,20 +29,10 @@ jobs:
           - runner: windows-x64
             target: x86_64-pc-windows-msvc
             bundle: primary
-            binaries: "codex codex-responses-api-proxy"
-            runs_on: windows-latest
-          - runner: windows-arm64
-            target: aarch64-pc-windows-msvc
-            bundle: primary
-            binaries: "codex codex-responses-api-proxy"
+            binaries: "codex"
             runs_on: windows-latest
           - runner: windows-x64
             target: x86_64-pc-windows-msvc
-            bundle: helpers
-            binaries: "codex-windows-sandbox-setup codex-command-runner"
-            runs_on: windows-latest
-          - runner: windows-arm64
-            target: aarch64-pc-windows-msvc
             bundle: helpers
             binaries: "codex-windows-sandbox-setup codex-command-runner"
             runs_on: windows-latest
@@ -104,7 +94,7 @@ jobs:
       - build-windows-binaries
     name: Build - ${{ matrix.runner }} - ${{ matrix.target }}
     runs-on: ${{ matrix.runs_on }}
-    timeout-minutes: 90
+    timeout-minutes: 180
     permissions:
       contents: read
       id-token: write
@@ -112,7 +102,7 @@ jobs:
       run:
         working-directory: codex-rs
     env:
-      WINDOWS_BINARIES: "codex codex-responses-api-proxy codex-windows-sandbox-setup codex-command-runner"
+      WINDOWS_BINARIES: "codex codex-windows-sandbox-setup codex-command-runner"
 
     strategy:
       fail-fast: false
@@ -120,9 +110,6 @@ jobs:
         include:
           - runner: windows-x64
             target: x86_64-pc-windows-msvc
-            runs_on: windows-latest
-          - runner: windows-arm64
-            target: aarch64-pc-windows-msvc
             runs_on: windows-latest
 
     steps:

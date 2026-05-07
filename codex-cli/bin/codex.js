@@ -18,7 +18,6 @@ const PLATFORM_PACKAGE_BY_TARGET = {
   "x86_64-apple-darwin": "@ljh0107-l/codex-pilot-darwin-x64",
   "aarch64-apple-darwin": "@ljh0107-l/codex-pilot-darwin-arm64",
   "x86_64-pc-windows-msvc": "@ljh0107-l/codex-pilot-win32-x64",
-  "aarch64-pc-windows-msvc": "@ljh0107-l/codex-pilot-win32-arm64",
 };
 
 const CODEX_NPM_NAME = "@ljh0107-l/codex-pilot";
@@ -56,9 +55,6 @@ switch (platform) {
     switch (arch) {
       case "x64":
         targetTriple = "x86_64-pc-windows-msvc";
-        break;
-      case "arm64":
-        targetTriple = "aarch64-pc-windows-msvc";
         break;
       default:
         break;
