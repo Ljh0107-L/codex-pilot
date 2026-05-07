@@ -1933,6 +1933,24 @@
       },
       "type": "object"
     },
+    "PromptPilotConfigToml": {
+      "additionalProperties": false,
+      "properties": {
+        "api_key_env": {
+          "description": "Environment variable containing the API key. Defaults to `OPENAI_API_KEY`. Set to an empty string to omit the Authorization header for local proxies.",
+          "type": "string"
+        },
+        "base_url": {
+          "description": "OpenAI-compatible base URL used for PromptPilot when `model` is set. Defaults to `https://api.openai.com/v1`.",
+          "type": "string"
+        },
+        "model": {
+          "description": "Model used only for PromptPilot prompt enhancement.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "RawMcpServerConfig": {
       "additionalProperties": false,
       "description": "Raw MCP config shape used for deserialization and supported-field JSON Schema generation.\n\nFields that are accepted only to produce targeted validation errors should be skipped in the generated schema.\n\nKeep `TryFrom<RawMcpServerConfig> for McpServerConfig` exhaustively destructuring this struct so new TOML fields cannot be added here without updating the validation/mapping logic that produces [`McpServerConfig`].",
@@ -4486,6 +4504,14 @@
         "$ref": "#/definitions/ProjectConfig"
       },
       "type": "object"
+    },
+    "prompt_pilot": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/PromptPilotConfigToml"
+        }
+      ],
+      "description": "PromptPilot prompt enhancement settings."
     },
     "realtime": {
       "allOf": [
