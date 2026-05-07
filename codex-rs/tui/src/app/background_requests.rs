@@ -5,6 +5,7 @@
 //! the main event loop remains single-threaded.
 
 use super::*;
+use crate::bottom_pane::PromptPilotPreview;
 use codex_app_server_protocol::HookTrustStatus;
 use codex_app_server_protocol::MarketplaceAddParams;
 use codex_app_server_protocol::MarketplaceAddResponse;
@@ -18,6 +19,23 @@ use codex_app_server_protocol::RequestId;
 use codex_utils_absolute_path::AbsolutePathBuf;
 
 impl App {
+    pub(super) fn prompt_pilot_enhance(
+        &mut self,
+        app_server: &AppServerSession,
+        thread_id: ThreadId,
+        request_id: u64,
+        prompt: String,
+    ) {
+        let request_handle = app_server.request_handle();
+        let app_event_tx = self.app_event_tx.clone();
+        tokio::spawn(async move {
+            let result = fetch_prompt_pilot_enhancement(request_handle, thread_id, prompt)
+                .await
+                .map_err(|err| format!("{err:#}"));
+            app_event_tx.send(AppEvent::PromptPilotEnhanceResult { request_id, result });
+        });
+    }
+
     pub(super) fn fetch_mcp_inventory(
         &mut self,
         app_server: &AppServerSession,
@@ -617,6 +635,30 @@ pub(super) async fn fetch_account_rate_limits(
         .wrap_err("account/rateLimits/read failed in TUI")?;
 
     Ok(app_server_rate_limit_snapshots(response))
+}
+
+pub(super) async fn fetch_prompt_pilot_enhancement(
+    request_handle: AppServerRequestHandle,
+    thread_id: ThreadId,
+    prompt: String,
+) -> Result<PromptPilotPreview> {
+    let request_id = RequestId::String(format!("prompt-pilot-{}", Uuid::new_v4()));
+    let response: ThreadPromptEnhanceResponse = request_handle
+        .request_typed(ClientRequest::ThreadPromptEnhance {
+            request_id,
+            params: ThreadPromptEnhanceParams {
+                thread_id: thread_id.to_string(),
+                prompt: prompt.clone(),
+            },
+        })
+        .await
+        .wrap_err("thread/prompt/enhance failed in TUI")?;
+
+    Ok(PromptPilotPreview::new(
+        prompt,
+        response.likely_understanding,
+        response.enhanced_prompt,
+    ))
 }
 
 pub(super) async fn send_add_credits_nudge_email(

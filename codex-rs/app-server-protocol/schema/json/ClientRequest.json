@@ -3851,6 +3851,21 @@
       ],
       "type": "object"
     },
+    "ThreadPromptEnhanceParams": {
+      "properties": {
+        "prompt": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt",
+        "threadId"
+      ],
+      "type": "object"
+    },
     "ThreadReadParams": {
       "properties": {
         "includeTurns": {
@@ -4849,6 +4864,30 @@
         "params"
       ],
       "title": "Thread/shellCommandRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "thread/prompt/enhance"
+          ],
+          "title": "Thread/prompt/enhanceRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/ThreadPromptEnhanceParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "Thread/prompt/enhanceRequest",
       "type": "object"
     },
     {

@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "properties": {
+    "prompt": {
+      "type": "string"
+    },
+    "threadId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "prompt",
+    "threadId"
+  ],
+  "title": "ThreadPromptEnhanceParams",
+  "type": "object"
+}

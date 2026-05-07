@@ -2483,6 +2483,7 @@
             "chat": {
               "decrease_reasoning_effort": null,
               "edit_queued_message": null,
+              "enhance_prompt": null,
               "increase_reasoning_effort": null
             },
             "composer": {
@@ -2768,6 +2769,14 @@
             }
           ],
           "description": "Edit the most recently queued message."
+        },
+        "enhance_prompt": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/KeybindingsSpec"
+            }
+          ],
+          "description": "Open PromptPilot prompt enhancement for the current composer draft."
         },
         "increase_reasoning_effort": {
           "allOf": [
@@ -3087,6 +3096,7 @@
           "default": {
             "decrease_reasoning_effort": null,
             "edit_queued_message": null,
+            "enhance_prompt": null,
             "increase_reasoning_effort": null
           }
         },

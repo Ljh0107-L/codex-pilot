@@ -1054,6 +1054,9 @@ impl MessageProcessor {
                     .thread_shell_command(&request_id, params)
                     .await
             }
+            ClientRequest::ThreadPromptEnhance { params, .. } => {
+                self.thread_processor.thread_prompt_enhance(params).await
+            }
             ClientRequest::ThreadApproveGuardianDeniedAction { params, .. } => {
                 self.thread_processor
                     .thread_approve_guardian_denied_action(&request_id, params)

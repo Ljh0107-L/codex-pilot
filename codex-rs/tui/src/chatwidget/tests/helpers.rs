@@ -332,6 +332,8 @@ pub(super) async fn make_chatwidget_manual(
         realtime_conversation: RealtimeConversationUiState::default(),
         last_rendered_user_message_display: None,
         last_non_retry_error: None,
+        next_prompt_pilot_request_id: 0,
+        active_prompt_pilot_request_id: None,
     };
     widget.set_model(&resolved_model);
     (widget, rx, op_rx)

@@ -83,6 +83,8 @@ pub(crate) struct ChatKeymap {
     pub(crate) increase_reasoning_effort: Vec<KeyBinding>,
     /// Edit the most recently queued message.
     pub(crate) edit_queued_message: Vec<KeyBinding>,
+    /// Open PromptPilot prompt enhancement for the current composer draft.
+    pub(crate) enhance_prompt: Vec<KeyBinding>,
 }
 
 /// Composer-level keybindings validated in the second app-scope conflict pass.
@@ -402,6 +404,11 @@ impl RuntimeKeymap {
                 &defaults.chat.edit_queued_message,
                 "tui.keymap.chat.edit_queued_message",
             )?,
+            enhance_prompt: resolve_bindings(
+                keymap.chat.enhance_prompt.as_ref(),
+                &defaults.chat.enhance_prompt,
+                "tui.keymap.chat.enhance_prompt",
+            )?,
         };
 
         let composer = ComposerKeymap {
@@ -559,6 +566,7 @@ impl RuntimeKeymap {
                 decrease_reasoning_effort: default_bindings![alt(KeyCode::Char(','))],
                 increase_reasoning_effort: default_bindings![alt(KeyCode::Char('.'))],
                 edit_queued_message: default_bindings![alt(KeyCode::Up), shift(KeyCode::Left)],
+                enhance_prompt: default_bindings![ctrl(KeyCode::Char('x'))],
             },
             composer: ComposerKeymap {
                 submit: default_bindings![plain(KeyCode::Enter)],
@@ -775,6 +783,7 @@ impl RuntimeKeymap {
                     "chat.edit_queued_message",
                     self.chat.edit_queued_message.as_slice(),
                 ),
+                ("chat.enhance_prompt", self.chat.enhance_prompt.as_slice()),
                 ("composer.submit", self.composer.submit.as_slice()),
                 ("composer.queue", self.composer.queue.as_slice()),
                 (
@@ -817,6 +826,7 @@ impl RuntimeKeymap {
                     "chat.edit_queued_message",
                     self.chat.edit_queued_message.as_slice(),
                 ),
+                ("chat.enhance_prompt", self.chat.enhance_prompt.as_slice()),
                 ("composer.submit", self.composer.submit.as_slice()),
                 ("composer.queue", self.composer.queue.as_slice()),
                 (
@@ -894,6 +904,7 @@ impl RuntimeKeymap {
                     "chat.increase_reasoning_effort",
                     self.chat.increase_reasoning_effort.as_slice(),
                 ),
+                ("chat.enhance_prompt", self.chat.enhance_prompt.as_slice()),
                 ("composer.submit", self.composer.submit.as_slice()),
                 ("toggle_vim_mode", self.app.toggle_vim_mode.as_slice()),
                 ("toggle_fast_mode", self.app.toggle_fast_mode.as_slice()),
@@ -1647,6 +1658,10 @@ mod tests {
         assert_eq!(
             runtime.chat.edit_queued_message,
             vec![key_hint::alt(KeyCode::Up), key_hint::shift(KeyCode::Left)]
+        );
+        assert_eq!(
+            runtime.chat.enhance_prompt,
+            vec![key_hint::ctrl(KeyCode::Char('x'))]
         );
         assert_eq!(
             runtime.composer.history_search_previous,

@@ -118,6 +118,8 @@ use codex_app_server_protocol::SkillsListResponse;
 use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::ThreadLoadedListParams;
 use codex_app_server_protocol::ThreadMemoryMode;
+use codex_app_server_protocol::ThreadPromptEnhanceParams;
+use codex_app_server_protocol::ThreadPromptEnhanceResponse;
 use codex_app_server_protocol::ThreadRollbackResponse;
 use codex_app_server_protocol::ThreadStartSource;
 use codex_app_server_protocol::Turn;

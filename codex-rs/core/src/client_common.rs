@@ -36,6 +36,12 @@ pub struct Prompt {
     /// Whether parallel tool calls are permitted for this prompt.
     pub(crate) parallel_tool_calls: bool,
 
+    /// Responses API tool choice override. Defaults to `auto` for normal turns.
+    pub(crate) tool_choice: Option<String>,
+
+    /// Responses API store override. Defaults to the provider-specific setting for normal turns.
+    pub(crate) store: Option<bool>,
+
     pub base_instructions: BaseInstructions,
 
     /// Optionally specify the personality of the model.
@@ -54,6 +60,8 @@ impl Default for Prompt {
             input: Vec::new(),
             tools: Vec::new(),
             parallel_tool_calls: false,
+            tool_choice: None,
+            store: None,
             base_instructions: BaseInstructions::default(),
             personality: None,
             output_schema: None,

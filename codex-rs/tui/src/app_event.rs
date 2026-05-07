@@ -34,6 +34,7 @@ use codex_utils_approval_presets::ApprovalPreset;
 
 use crate::app_command::AppCommand;
 use crate::bottom_pane::ApprovalRequest;
+use crate::bottom_pane::PromptPilotPreview;
 use crate::bottom_pane::StatusLineItem;
 use crate::bottom_pane::TerminalTitleItem;
 use crate::chatwidget::UserMessage;
@@ -209,6 +210,19 @@ pub(crate) enum AppEvent {
     /// Forward a command to the Agent. Using an `AppEvent` for this avoids
     /// bubbling channels through layers of widgets.
     CodexOp(AppCommand),
+
+    /// Start a PromptPilot model-backed prompt enhancement request.
+    PromptPilotEnhance {
+        thread_id: ThreadId,
+        request_id: u64,
+        prompt: String,
+    },
+
+    /// Deliver a completed PromptPilot enhancement request back to the chat widget.
+    PromptPilotEnhanceResult {
+        request_id: u64,
+        result: Result<PromptPilotPreview, String>,
+    },
 
     /// Approve one retry of a recent auto-review denial selected in the TUI.
     ApproveRecentAutoReviewDenial {

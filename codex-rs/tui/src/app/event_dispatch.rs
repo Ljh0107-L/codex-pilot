@@ -666,6 +666,17 @@ impl App {
             AppEvent::FileSearchResult { query, matches } => {
                 self.chat_widget.apply_file_search_result(query, matches);
             }
+            AppEvent::PromptPilotEnhance {
+                thread_id,
+                request_id,
+                prompt,
+            } => {
+                self.prompt_pilot_enhance(app_server, thread_id, request_id, prompt);
+            }
+            AppEvent::PromptPilotEnhanceResult { request_id, result } => {
+                self.chat_widget
+                    .on_prompt_pilot_enhance_result(request_id, result);
+            }
             AppEvent::RefreshRateLimits { origin } => {
                 self.refresh_rate_limits(app_server, origin);
             }
