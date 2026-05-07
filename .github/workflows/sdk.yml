@@ -1,15 +1,11 @@
 name: sdk
 
 on:
-  push:
-    branches: [main]
-  pull_request: {}
+  workflow_dispatch:
 
 jobs:
   sdks:
-    runs-on:
-      group: codex-runners
-      labels: codex-linux-x64
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout repository

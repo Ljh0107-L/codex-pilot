@@ -24,6 +24,8 @@ For example, `0.128.0-pilot.1.0.0` means the release is based on OpenAI Codex `0
 
 - Kept enhanced prompts as a composer-only draft edit; applying a PromptPilot suggestion does not submit the task.
 - Updated PromptPilot to use supported `medium` reasoning and keep interpreted intent/enhanced prompts in the original prompt's primary language.
+- Prepared npm packaging under `@ljh0107-l/codex-pilot` with scoped native optional package aliases.
+- Adjusted fork CI so pull requests do not depend on OpenAI-internal runners, paid macOS xlarge runners, or BuildBuddy credentials.
 
 ### Not Changed
 

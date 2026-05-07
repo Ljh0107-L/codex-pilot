@@ -67,25 +67,25 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-15-xlarge
+          - runner: macos-15
             target: aarch64-apple-darwin
             bundle: primary
             artifact_name: aarch64-apple-darwin
             binaries: "codex codex-responses-api-proxy"
             build_dmg: "true"
-          - runner: macos-15-xlarge
+          - runner: macos-15
             target: aarch64-apple-darwin
             bundle: app-server
             artifact_name: aarch64-apple-darwin-app-server
             binaries: "codex-app-server"
             build_dmg: "false"
-          - runner: macos-15-xlarge
+          - runner: macos-15
             target: x86_64-apple-darwin
             bundle: primary
             artifact_name: x86_64-apple-darwin
             binaries: "codex codex-responses-api-proxy"
             build_dmg: "true"
-          - runner: macos-15-xlarge
+          - runner: macos-15
             target: x86_64-apple-darwin
             bundle: app-server
             artifact_name: x86_64-apple-darwin-app-server
@@ -643,7 +643,7 @@ jobs:
           # Node 24 bundles npm >= 11.5.1, which trusted publishing requires.
           node-version: 24
           registry-url: "https://registry.npmjs.org"
-          scope: "@openai"
+          scope: "@ljh0107-l"
 
       - name: Download npm tarballs from release
         env:
@@ -686,7 +686,7 @@ jobs:
           sdk_tarball="dist/npm/codex-sdk-npm-${VERSION}.tgz"
           # Keep this list in sync with CODEX_PLATFORM_PACKAGES in
           # codex-cli/scripts/build_npm_package.py. The root wrapper advances
-          # @openai/codex@latest as soon as it publishes, so every platform
+          # @ljh0107-l/codex-pilot@latest as soon as it publishes, so every platform
           # package it aliases must already exist in the registry first.
           platform_tarballs=(
             "dist/npm/codex-npm-linux-x64-${VERSION}.tgz"
@@ -726,7 +726,7 @@ jobs:
           done
 
           # Publish the platform packages before the root CLI wrapper. The root
-          # wrapper advances @openai/codex@latest, so it should only publish
+          # wrapper advances @ljh0107-l/codex-pilot@latest, so it should only publish
           # after the optional dependency versions it references exist.
           tarballs=(
             "${platform_tarballs[@]}"
@@ -756,7 +756,7 @@ jobs:
                 ;;
             esac
 
-            publish_cmd=(npm publish "${GITHUB_WORKSPACE}/${tarball}")
+            publish_cmd=(npm publish "${GITHUB_WORKSPACE}/${tarball}" --access public)
             if [[ -n "${tag}" ]]; then
               publish_cmd+=(--tag "${tag}")
             fi

@@ -178,12 +178,13 @@ def main() -> int:
         workflow_url = DEFAULT_WORKFLOW_URL
 
     workflow_id = workflow_url.rstrip("/").split("/")[-1]
+    workflow_repo = _workflow_repo_from_url(workflow_url)
     print(f"Downloading native artifacts from workflow {workflow_id}...")
 
     with _gha_group(f"Download native artifacts from workflow {workflow_id}"):
         with tempfile.TemporaryDirectory(prefix="codex-native-artifacts-") as artifacts_dir_str:
             artifacts_dir = Path(artifacts_dir_str)
-            _download_artifacts(workflow_id, artifacts_dir)
+            _download_artifacts(workflow_id, artifacts_dir, workflow_repo)
             install_binary_components(
                 artifacts_dir,
                 vendor_dir,
@@ -267,7 +268,15 @@ def fetch_rg(
     return [results[target] for target in targets]
 
 
-def _download_artifacts(workflow_id: str, dest_dir: Path) -> None:
+def _workflow_repo_from_url(workflow_url: str) -> str:
+    parsed = urlparse(workflow_url)
+    path_parts = [part for part in parsed.path.split("/") if part]
+    if parsed.netloc == "github.com" and len(path_parts) >= 2:
+        return f"{path_parts[0]}/{path_parts[1]}"
+    return os.environ.get("GITHUB_REPOSITORY", "Ljh0107-L/codex-pilot")
+
+
+def _download_artifacts(workflow_id: str, dest_dir: Path, workflow_repo: str) -> None:
     cmd = [
         "gh",
         "run",
@@ -275,7 +284,7 @@ def _download_artifacts(workflow_id: str, dest_dir: Path) -> None:
         "--dir",
         str(dest_dir),
         "--repo",
-        "openai/codex",
+        workflow_repo,
         workflow_id,
     ]
     subprocess.check_call(cmd)
