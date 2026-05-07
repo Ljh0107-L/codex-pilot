@@ -387,6 +387,9 @@ jobs:
   build-windows:
     needs: tag-check
     uses: ./.github/workflows/rust-release-windows.yml
+    permissions:
+      contents: read
+      id-token: write
     with:
       release-lto: ${{ contains(github.ref_name, '-alpha') && 'thin' || 'fat' }}
 
