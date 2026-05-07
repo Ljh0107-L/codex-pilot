@@ -10,6 +10,15 @@ An unofficial OpenAI Codex CLI fork with PromptPilot prompt enhancement.
 
 Codex Pilot is an experimental fork of OpenAI Codex CLI.
 
+The goal is to provide a lightweight PromptPilot experience in the Codex terminal UI:
+
+- show how Codex is likely to understand your prompt
+- rewrite rough instructions into clearer coding-agent prompts
+- preview the enhanced prompt before execution
+- reduce vague or overly broad agent runs
+
+Codex Pilot is not a replacement for OpenAI Codex CLI. It is a small fork focused on prompt enhancement UX.
+
 ## Installation
 
 ```bash
@@ -21,15 +30,6 @@ Run the CLI with:
 ```bash
 codex-pilot
 ```
-
-The goal is to provide a lightweight PromptPilot experience in the Codex terminal UI:
-
-- show how Codex is likely to understand your prompt
-- rewrite rough instructions into clearer coding-agent prompts
-- preview the enhanced prompt before execution
-- reduce vague or overly broad agent runs
-
-Codex Pilot is not a replacement for OpenAI Codex CLI. It is a small fork focused on prompt enhancement UX.
 
 ## PromptPilot features
 
