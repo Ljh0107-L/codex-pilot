@@ -267,7 +267,7 @@ impl PromptPilotPreviewView {
         let mut lines = vec![Line::from("PromptPilot".bold())];
 
         lines.push(Line::from(""));
-        lines.push(Line::from("Likely Understanding".cyan().bold()));
+        lines.push(Line::from("Interpreted intent".cyan().bold()));
         for wrapped in textwrap::wrap(&self.preview.understanding, wrap_width) {
             lines.push(Line::from(wrapped.into_owned().dim()));
         }

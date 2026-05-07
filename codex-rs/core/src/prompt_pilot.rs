@@ -23,7 +23,10 @@ Return exactly the JSON object requested by the schema.
 
 Rules:
 - likely_understanding describes how Codex would likely interpret the original prompt if submitted unchanged.
+- Write likely_understanding in the same primary language as the original prompt. If the prompt mixes languages, use the user's dominant language.
 - enhanced_prompt must be the original prompt exactly when the original prompt is already clear, conversational, trivial, or should not be expanded.
+- Keep enhanced_prompt in the same primary language as the original prompt unless the user explicitly asks for translation or a different language.
+- Do not translate the user's intent into English by default.
 - Do not invent requirements, files, tests, tools, PR steps, git steps, or implementation plans.
 - Do not turn casual conversation into a coding task.
 - Add constraints, context, or verification only when the original prompt implies that kind of work and the draft is materially ambiguous.
@@ -41,6 +44,10 @@ Examples:
 - Original: fix login bug
   likely_understanding: Codex should investigate and fix a login-related bug in the current codebase.
   enhanced_prompt: Investigate and fix the login bug in this codebase. First identify the relevant login flow, then make the smallest scoped change needed and run the most relevant local checks.
+  changed: true
+- Original: 修复登录 bug
+  likely_understanding: Codex 应该在当前代码库中调查并修复登录相关的问题。
+  enhanced_prompt: 在这个代码库中调查并修复登录 bug。先定位相关登录流程，然后进行最小范围修改，并运行最相关的本地检查。
   changed: true
 "#;
 
@@ -95,7 +102,7 @@ pub(crate) async fn enhance_prompt(
             &prompt,
             &turn_context.model_info,
             &turn_context.session_telemetry,
-            Some(ReasoningEffort::Minimal),
+            Some(ReasoningEffort::Medium),
             ReasoningSummary::None,
             turn_context.config.service_tier.clone(),
             turn_metadata_header.as_deref(),
@@ -112,10 +119,12 @@ fn prompt_enhancement_schema() -> serde_json::Value {
         "additionalProperties": false,
         "properties": {
             "likely_understanding": {
-                "type": "string"
+                "type": "string",
+                "description": "How Codex would likely interpret the original prompt if submitted unchanged. Use the same primary language as the original prompt."
             },
             "enhanced_prompt": {
-                "type": "string"
+                "type": "string",
+                "description": "The refined prompt, written as the user. Use the same primary language as the original prompt unless the user explicitly asks for translation or a different language."
             },
             "changed": {
                 "type": "boolean"
@@ -255,6 +264,22 @@ mod tests {
                 enhanced_prompt: "hello".to_string(),
                 changed: false,
             }
+        );
+    }
+
+    #[test]
+    fn prompt_instructions_require_original_prompt_language() {
+        assert!(PROMPT_PILOT_INSTRUCTIONS.contains("same primary language"));
+        assert!(PROMPT_PILOT_INSTRUCTIONS.contains("Do not translate"));
+
+        let schema = prompt_enhancement_schema();
+        assert_eq!(
+            schema["properties"]["likely_understanding"]["description"],
+            "How Codex would likely interpret the original prompt if submitted unchanged. Use the same primary language as the original prompt."
+        );
+        assert_eq!(
+            schema["properties"]["enhanced_prompt"]["description"],
+            "The refined prompt, written as the user. Use the same primary language as the original prompt unless the user explicitly asks for translation or a different language."
         );
     }
 }
