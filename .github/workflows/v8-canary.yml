@@ -35,6 +35,7 @@ concurrency:
 
 jobs:
   metadata:
+    if: ${{ vars.ENABLE_V8_CANARY == 'true' }}
     runs-on: ubuntu-latest
     outputs:
       v8_version: ${{ steps.v8_version.outputs.version }}
@@ -58,6 +59,7 @@ jobs:
   build:
     name: Build ${{ matrix.target }}
     needs: metadata
+    if: ${{ vars.ENABLE_V8_CANARY == 'true' }}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
