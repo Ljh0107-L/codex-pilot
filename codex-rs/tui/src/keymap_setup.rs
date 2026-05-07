@@ -1381,11 +1381,12 @@ mod tests {
     #[test]
     fn debug_view_uses_custom_binding_source() {
         let keymap =
-            keymap_with_replacement(&TuiKeymap::default(), "global", "copy", "ctrl-x").unwrap();
+            keymap_with_replacement(&TuiKeymap::default(), "global", "copy", "ctrl-shift-k")
+                .unwrap();
         let runtime = RuntimeKeymap::from_config(&keymap).unwrap();
         let mut view = build_keymap_debug_view(&runtime, &keymap);
 
-        view.handle_key_event(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL));
+        view.handle_key_event(KeyEvent::new(KeyCode::Char('K'), KeyModifiers::CONTROL));
 
         let rendered = render_debug(&view, /*width*/ 100);
         assert!(rendered.contains("global.copy (Copy)"));

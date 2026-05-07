@@ -1215,6 +1215,30 @@
             },
             "method": {
               "enum": [
+                "thread/prompt/enhance"
+              ],
+              "title": "Thread/prompt/enhanceRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadPromptEnhanceParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/prompt/enhanceRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
                 "thread/approveGuardianDeniedAction"
               ],
               "title": "Thread/approveGuardianDeniedActionRequestMethod",
@@ -14658,6 +14682,44 @@
         "threadId"
       ],
       "title": "ThreadNameUpdatedNotification",
+      "type": "object"
+    },
+    "ThreadPromptEnhanceParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "prompt": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt",
+        "threadId"
+      ],
+      "title": "ThreadPromptEnhanceParams",
+      "type": "object"
+    },
+    "ThreadPromptEnhanceResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "changed": {
+          "type": "boolean"
+        },
+        "enhancedPrompt": {
+          "type": "string"
+        },
+        "likelyUnderstanding": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "changed",
+        "enhancedPrompt",
+        "likelyUnderstanding"
+      ],
+      "title": "ThreadPromptEnhanceResponse",
       "type": "object"
     },
     "ThreadReadParams": {

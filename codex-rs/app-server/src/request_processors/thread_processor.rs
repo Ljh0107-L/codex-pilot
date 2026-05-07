@@ -601,6 +601,15 @@ impl ThreadRequestProcessor {
             .map(|response| Some(response.into()))
     }
 
+    pub(crate) async fn thread_prompt_enhance(
+        &self,
+        params: ThreadPromptEnhanceParams,
+    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
+        self.thread_prompt_enhance_inner(params)
+            .await
+            .map(|response| Some(response.into()))
+    }
+
     pub(crate) async fn thread_approve_guardian_denied_action(
         &self,
         request_id: &ConnectionRequestId,
@@ -1732,6 +1741,29 @@ impl ThreadRequestProcessor {
         .await
         .map_err(|err| internal_error(format!("failed to start shell command: {err}")))?;
         Ok(ThreadShellCommandResponse {})
+    }
+
+    async fn thread_prompt_enhance_inner(
+        &self,
+        params: ThreadPromptEnhanceParams,
+    ) -> Result<ThreadPromptEnhanceResponse, JSONRPCErrorError> {
+        let ThreadPromptEnhanceParams { thread_id, prompt } = params;
+        let prompt = prompt.trim().to_string();
+        if prompt.is_empty() {
+            return Err(invalid_request("prompt must not be empty"));
+        }
+
+        let (_, thread) = self.load_thread(&thread_id).await?;
+        let enhancement = thread
+            .enhance_prompt(prompt)
+            .await
+            .map_err(|err| internal_error(format!("failed to enhance prompt: {err}")))?;
+
+        Ok(ThreadPromptEnhanceResponse {
+            likely_understanding: enhancement.likely_understanding,
+            enhanced_prompt: enhancement.enhanced_prompt,
+            changed: enhancement.changed,
+        })
     }
 
     async fn thread_approve_guardian_denied_action_inner(

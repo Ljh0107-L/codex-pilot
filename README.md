@@ -19,9 +19,9 @@ The goal is to add a lightweight PromptPilot experience to the Codex terminal UI
 
 Codex Pilot is not a replacement for OpenAI Codex CLI. It is a small fork focused on prompt enhancement UX.
 
-## Planned PromptPilot features
+## PromptPilot features
 
-- `Ctrl+P` prompt enhancement
+- `Ctrl+X` prompt enhancement
 - model understanding preview
 - enhanced prompt preview before execution
 

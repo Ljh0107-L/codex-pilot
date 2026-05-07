@@ -30,6 +30,11 @@ pub(crate) trait BottomPaneView: Renderable {
         None
     }
 
+    /// Return composer text that should replace the current draft when this view closes.
+    fn take_composer_replacement(&mut self) -> Option<String> {
+        None
+    }
+
     /// Return true when this view should be removed after a child view is accepted.
     fn dismiss_after_child_accept(&self) -> bool {
         false

@@ -1,0 +1,29 @@
+---
+source: tui/src/bottom_pane/prompt_pilot.rs
+expression: "render_snapshot(&view, Rect::new(0, 0, 80, view.desired_height(80)))"
+---
+                                                                                
+  PromptPilot                                                                   
+                                                                                
+  Interpreted intent                                                            
+  Codex should treat this as a focused coding task based on the user's draft:   
+  "fix login bug". The agent should inspect the relevant code first, keep the   
+  change scoped, and verify the result with the most relevant local checks.     
+                                                                                
+  Original prompt                                                               
+  > fix login bug                                                               
+                                                                                
+  Enhanced prompt                                                               
+  Task: fix login bug                                                           
+                                                                                
+  Please work through this as a focused coding-agent task:                      
+                                                                                
+  1. Inspect the relevant code path and summarize the current behavior before   
+  editing.                                                                      
+  2. Identify the smallest scoped change that satisfies the task.               
+  3. Implement the change using existing project conventions.                   
+  4. Add or update focused tests when behavior changes.                         
+  5. Run the most relevant formatter and tests, then report what passed or      
+  could not be run.                                                             
+                                                                                
+  Enter apply   A apply   Esc cancel

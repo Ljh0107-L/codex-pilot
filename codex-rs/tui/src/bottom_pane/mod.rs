@@ -135,6 +135,7 @@ mod paste_burst;
 mod pending_input_preview;
 mod pending_thread_approvals;
 pub(crate) mod popup_consts;
+mod prompt_pilot;
 mod scroll_state;
 mod selection_popup_common;
 mod selection_tabs;
@@ -142,6 +143,10 @@ mod textarea;
 mod unified_exec_footer;
 pub(crate) use feedback_view::FeedbackNoteView;
 pub(crate) use hooks_browser_view::HooksBrowserView;
+pub(crate) use prompt_pilot::LOADING_VIEW_ID as PROMPT_PILOT_LOADING_VIEW_ID;
+pub(crate) use prompt_pilot::PromptPilotLoadingView;
+pub(crate) use prompt_pilot::PromptPilotPreview;
+pub(crate) use prompt_pilot::PromptPilotPreviewView;
 pub(crate) use selection_tabs::SelectionTab;
 
 /// How long the "press again to quit" hint stays visible.
@@ -561,7 +566,13 @@ impl BottomPane {
             // We need three pieces of information after routing the key:
             // whether Esc completed the view, whether the view finished for any
             // reason, and whether a paste-burst timer should be scheduled.
-            let (ctrl_c_completed, view_complete, completion, view_in_paste_burst) = {
+            let (
+                ctrl_c_completed,
+                view_complete,
+                completion,
+                composer_replacement,
+                view_in_paste_burst,
+            ) = {
                 let last_index = self.view_stack.len() - 1;
                 let view = &mut self.view_stack[last_index];
                 let prefer_esc =
@@ -571,13 +582,20 @@ impl BottomPane {
                     && matches!(view.on_ctrl_c(), CancellationEvent::Handled)
                     && view.is_complete();
                 if ctrl_c_completed {
-                    (true, true, view.completion(), false)
+                    (true, true, view.completion(), None, false)
                 } else {
                     view.handle_key_event(key_event);
+                    let view_complete = view.is_complete();
+                    let composer_replacement = if view_complete {
+                        view.take_composer_replacement()
+                    } else {
+                        None
+                    };
                     (
                         false,
-                        view.is_complete(),
+                        view_complete,
                         view.completion(),
+                        composer_replacement,
                         view.is_in_paste_burst(),
                     )
                 }
@@ -594,6 +612,9 @@ impl BottomPane {
                 self.pop_active_view_with_completion(completion);
             } else if view_in_paste_burst {
                 self.request_redraw_in(ChatComposer::recommended_paste_flush_delay());
+            }
+            if let Some(text) = composer_replacement {
+                self.set_composer_text(text, Vec::new(), Vec::new());
             }
             self.request_redraw();
             InputResult::None
@@ -1218,6 +1239,39 @@ impl BottomPane {
 
     pub(crate) fn show_view(&mut self, view: Box<dyn BottomPaneView>) {
         self.push_view(view);
+    }
+
+    pub(crate) fn show_prompt_pilot_loading(&mut self, original_prompt: String) {
+        self.push_view(Box::new(PromptPilotLoadingView::new(original_prompt)));
+    }
+
+    pub(crate) fn replace_prompt_pilot_loading_with_preview(
+        &mut self,
+        preview: PromptPilotPreview,
+    ) -> bool {
+        let Some(view) = self.view_stack.last_mut() else {
+            return false;
+        };
+        if view.view_id() != Some(PROMPT_PILOT_LOADING_VIEW_ID) {
+            return false;
+        }
+
+        *view = Box::new(PromptPilotPreviewView::new(preview));
+        self.request_redraw();
+        true
+    }
+
+    pub(crate) fn close_prompt_pilot_loading(&mut self) -> bool {
+        if self.view_stack.last().and_then(|view| view.view_id())
+            != Some(PROMPT_PILOT_LOADING_VIEW_ID)
+        {
+            return false;
+        }
+
+        self.view_stack.pop();
+        self.on_view_stack_depth_decreased();
+        self.request_redraw();
+        true
     }
 
     /// Called when the agent requests user approval.

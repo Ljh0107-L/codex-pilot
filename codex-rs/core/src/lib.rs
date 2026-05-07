@@ -67,6 +67,8 @@ pub use mention_syntax::TOOL_MENTION_SIGIL;
 pub use utils::path_utils;
 pub mod personality_migration;
 pub(crate) mod plugins;
+mod prompt_pilot;
+pub use prompt_pilot::PromptEnhancement;
 #[doc(hidden)]
 pub(crate) mod prompt_debug;
 #[doc(hidden)]

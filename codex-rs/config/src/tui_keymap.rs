@@ -121,6 +121,8 @@ pub struct TuiChatKeymap {
     pub increase_reasoning_effort: Option<KeybindingsSpec>,
     /// Edit the most recently queued message.
     pub edit_queued_message: Option<KeybindingsSpec>,
+    /// Open PromptPilot prompt enhancement for the current composer draft.
+    pub enhance_prompt: Option<KeybindingsSpec>,
 }
 
 /// Composer context keybindings. These override corresponding `global` actions.

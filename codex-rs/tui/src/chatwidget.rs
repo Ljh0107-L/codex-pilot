@@ -275,6 +275,7 @@ use crate::bottom_pane::LocalImageAttachment;
 use crate::bottom_pane::McpServerElicitationFormRequest;
 use crate::bottom_pane::MemoriesSettingsView;
 use crate::bottom_pane::MentionBinding;
+use crate::bottom_pane::PromptPilotPreview;
 use crate::bottom_pane::QUIT_SHORTCUT_TIMEOUT;
 use crate::bottom_pane::QueuedInputAction;
 use crate::bottom_pane::SelectionAction;
@@ -1035,6 +1036,8 @@ pub(crate) struct ChatWidget {
     realtime_conversation: RealtimeConversationUiState,
     last_rendered_user_message_display: Option<UserMessageDisplay>,
     last_non_retry_error: Option<(String, String)>,
+    next_prompt_pilot_request_id: u64,
+    active_prompt_pilot_request_id: Option<u64>,
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -5066,6 +5069,8 @@ impl ChatWidget {
             realtime_conversation: RealtimeConversationUiState::default(),
             last_rendered_user_message_display: None,
             last_non_retry_error: None,
+            next_prompt_pilot_request_id: 0,
+            active_prompt_pilot_request_id: None,
         };
 
         widget.prefetch_rate_limits();
@@ -5221,6 +5226,14 @@ impl ChatWidget {
             return;
         }
 
+        if key_event.kind == KeyEventKind::Press
+            && self.chat_keymap.enhance_prompt.is_pressed(key_event)
+            && self.bottom_pane.no_modal_or_popup_active()
+        {
+            self.open_prompt_pilot_preview();
+            return;
+        }
+
         if matches!(key_event.code, KeyCode::Esc)
             && matches!(key_event.kind, KeyEventKind::Press | KeyEventKind::Repeat)
             && !self.pending_steers.is_empty()
@@ -5359,6 +5372,71 @@ impl ChatWidget {
 
     pub(crate) fn composer_text_with_pending(&self) -> String {
         self.bottom_pane.composer_text_with_pending()
+    }
+
+    fn open_prompt_pilot_preview(&mut self) {
+        let prompt = self.bottom_pane.composer_text_with_pending();
+        let prompt = prompt.trim();
+        if prompt.is_empty() {
+            self.add_error_message(
+                "PromptPilot needs a text prompt before it can enhance the draft.".to_string(),
+            );
+            return;
+        }
+
+        if !self.bottom_pane.composer_text_elements().is_empty()
+            || !self.bottom_pane.composer_local_images().is_empty()
+            || !self.bottom_pane.remote_image_urls().is_empty()
+        {
+            self.add_error_message(
+                "PromptPilot 1.0.0 supports text-only drafts. Remove attachments or rich mentions before enhancing."
+                    .to_string(),
+            );
+            return;
+        }
+
+        let Some(thread_id) = self.thread_id else {
+            self.add_error_message(
+                "PromptPilot is unavailable until the Codex session is ready.".to_string(),
+            );
+            return;
+        };
+
+        let request_id = self.next_prompt_pilot_request_id;
+        self.next_prompt_pilot_request_id = self.next_prompt_pilot_request_id.saturating_add(1);
+        self.active_prompt_pilot_request_id = Some(request_id);
+        let prompt = prompt.to_string();
+        self.bottom_pane.show_prompt_pilot_loading(prompt.clone());
+        self.app_event_tx.send(AppEvent::PromptPilotEnhance {
+            thread_id,
+            request_id,
+            prompt,
+        });
+        self.request_redraw();
+    }
+
+    pub(crate) fn on_prompt_pilot_enhance_result(
+        &mut self,
+        request_id: u64,
+        result: Result<PromptPilotPreview, String>,
+    ) {
+        if self.active_prompt_pilot_request_id != Some(request_id) {
+            return;
+        }
+        self.active_prompt_pilot_request_id = None;
+
+        match result {
+            Ok(preview) => {
+                self.bottom_pane
+                    .replace_prompt_pilot_loading_with_preview(preview);
+            }
+            Err(message) => {
+                if self.bottom_pane.close_prompt_pilot_loading() {
+                    self.add_error_message(format!("PromptPilot failed: {message}"));
+                }
+            }
+        }
+        self.request_redraw();
     }
 
     pub(crate) fn apply_external_edit(&mut self, text: String) {

@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "properties": {
+    "changed": {
+      "type": "boolean"
+    },
+    "enhancedPrompt": {
+      "type": "string"
+    },
+    "likelyUnderstanding": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "changed",
+    "enhancedPrompt",
+    "likelyUnderstanding"
+  ],
+  "title": "ThreadPromptEnhanceResponse",
+  "type": "object"
+}

@@ -716,10 +716,15 @@ impl ModelClient {
             instructions: instructions.clone(),
             input,
             tools,
-            tool_choice: "auto".to_string(),
+            tool_choice: prompt
+                .tool_choice
+                .clone()
+                .unwrap_or_else(|| "auto".to_string()),
             parallel_tool_calls: prompt.parallel_tool_calls,
             reasoning,
-            store: provider.is_azure_responses_endpoint(),
+            store: prompt
+                .store
+                .unwrap_or_else(|| provider.is_azure_responses_endpoint()),
             stream: true,
             include,
             service_tier,

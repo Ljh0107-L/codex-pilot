@@ -3,6 +3,7 @@ use crate::config::ConstraintResult;
 use crate::file_watcher::WatchRegistration;
 use crate::goals::ExternalGoalSet;
 use crate::goals::GoalRuntimeEvent;
+use crate::prompt_pilot::PromptEnhancement;
 use crate::session::Codex;
 use crate::session::SessionSettingsUpdate;
 use crate::session::SteerInputError;
@@ -384,6 +385,10 @@ impl CodexThread {
             .await;
         self.codex.session.flush_rollout().await?;
         Ok(())
+    }
+
+    pub async fn enhance_prompt(&self, prompt: String) -> CodexResult<PromptEnhancement> {
+        crate::prompt_pilot::enhance_prompt(Arc::clone(&self.codex.session), prompt).await
     }
 
     pub fn rollout_path(&self) -> Option<PathBuf> {

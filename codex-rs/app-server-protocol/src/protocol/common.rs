@@ -539,6 +539,11 @@ client_request_definitions! {
         serialization: thread_id(params.thread_id),
         response: v2::ThreadShellCommandResponse,
     },
+    ThreadPromptEnhance => "thread/prompt/enhance" {
+        params: v2::ThreadPromptEnhanceParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::ThreadPromptEnhanceResponse,
+    },
     ThreadApproveGuardianDeniedAction => "thread/approveGuardianDeniedAction" {
         params: v2::ThreadApproveGuardianDeniedActionParams,
         serialization: thread_id(params.thread_id),
