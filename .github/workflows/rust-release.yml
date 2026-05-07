@@ -1,8 +1,8 @@
-# Release workflow for codex-rs.
+# Release workflow for Codex Pilot.
 # To release, follow a workflow like:
 # ```
-# git tag -a rust-v0.1.0 -m "Release 0.1.0"
-# git push origin rust-v0.1.0
+# git tag -a rust-v1.0.0 -m "Release 1.0.0"
+# git push origin rust-v1.0.0
 # ```
 
 name: rust-release
@@ -48,7 +48,7 @@ jobs:
   build:
     needs: tag-check
     name: Build - ${{ matrix.runner }} - ${{ matrix.target }} - ${{ matrix.bundle }}
-    runs-on: ${{ matrix.runs_on || matrix.runner }}
+    runs-on: ${{ matrix.runner }}
     # Release builds can take a long time, so leave some headroom to avoid
     # having to restart the full workflow due to a timeout.
     timeout-minutes: 90
@@ -72,24 +72,12 @@ jobs:
             bundle: primary
             artifact_name: aarch64-apple-darwin
             binaries: "codex codex-responses-api-proxy"
-            build_dmg: "true"
-          - runner: macos-15
-            target: aarch64-apple-darwin
-            bundle: app-server
-            artifact_name: aarch64-apple-darwin-app-server
-            binaries: "codex-app-server"
             build_dmg: "false"
           - runner: macos-15
             target: x86_64-apple-darwin
             bundle: primary
             artifact_name: x86_64-apple-darwin
             binaries: "codex codex-responses-api-proxy"
-            build_dmg: "true"
-          - runner: macos-15
-            target: x86_64-apple-darwin
-            bundle: app-server
-            artifact_name: x86_64-apple-darwin-app-server
-            binaries: "codex-app-server"
             build_dmg: "false"
           # Release artifacts intentionally ship MUSL-linked Linux binaries.
           - runner: ubuntu-24.04
@@ -98,23 +86,11 @@ jobs:
             artifact_name: x86_64-unknown-linux-musl
             binaries: "codex codex-responses-api-proxy bwrap"
             build_dmg: "false"
-          - runner: ubuntu-24.04
-            target: x86_64-unknown-linux-musl
-            bundle: app-server
-            artifact_name: x86_64-unknown-linux-musl-app-server
-            binaries: "codex-app-server"
-            build_dmg: "false"
           - runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-musl
             bundle: primary
             artifact_name: aarch64-unknown-linux-musl
             binaries: "codex codex-responses-api-proxy bwrap"
-            build_dmg: "false"
-          - runner: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-musl
-            bundle: app-server
-            artifact_name: aarch64-unknown-linux-musl-app-server
-            binaries: "codex-app-server"
             build_dmg: "false"
 
     steps:
@@ -298,20 +274,6 @@ jobs:
           artifacts-dir: ${{ github.workspace }}/codex-rs/target/${{ matrix.target }}/release
           binaries: ${{ matrix.binaries }}
 
-      - if: ${{ runner.os == 'macOS' }}
-        name: MacOS code signing (binaries)
-        uses: ./.github/actions/macos-code-sign
-        with:
-          target: ${{ matrix.target }}
-          binaries: ${{ matrix.binaries }}
-          sign-binaries: "true"
-          sign-dmg: "false"
-          apple-certificate: ${{ secrets.APPLE_CERTIFICATE_P12 }}
-          apple-certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          apple-notarization-key-p8: ${{ secrets.APPLE_NOTARIZATION_KEY_P8 }}
-          apple-notarization-key-id: ${{ secrets.APPLE_NOTARIZATION_KEY_ID }}
-          apple-notarization-issuer-id: ${{ secrets.APPLE_NOTARIZATION_ISSUER_ID }}
-
       - if: ${{ runner.os == 'macOS' && matrix.build_dmg == 'true' }}
         name: Build macOS dmg
         shell: bash
@@ -324,9 +286,6 @@ jobs:
           volname="Codex (${target})"
           dmg_path="${release_dir}/codex-${target}.dmg"
 
-          # The previous "MacOS code signing (binaries)" step signs + notarizes the
-          # built artifacts in `${release_dir}`. This step packages *those same*
-          # signed binaries into a dmg.
           rm -rf "$dmg_root"
           mkdir -p "$dmg_root"
 
@@ -351,19 +310,6 @@ jobs:
             echo "dmg $dmg_path not found after build"
             exit 1
           fi
-
-      - if: ${{ runner.os == 'macOS' && matrix.build_dmg == 'true' }}
-        name: MacOS code signing (dmg)
-        uses: ./.github/actions/macos-code-sign
-        with:
-          target: ${{ matrix.target }}
-          sign-binaries: "false"
-          sign-dmg: "true"
-          apple-certificate: ${{ secrets.APPLE_CERTIFICATE_P12 }}
-          apple-certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          apple-notarization-key-p8: ${{ secrets.APPLE_NOTARIZATION_KEY_P8 }}
-          apple-notarization-key-id: ${{ secrets.APPLE_NOTARIZATION_KEY_ID }}
-          apple-notarization-issuer-id: ${{ secrets.APPLE_NOTARIZATION_ISSUER_ID }}
 
       - name: Stage artifacts
         shell: bash
@@ -443,10 +389,10 @@ jobs:
     uses: ./.github/workflows/rust-release-windows.yml
     with:
       release-lto: ${{ contains(github.ref_name, '-alpha') && 'thin' || 'fat' }}
-    secrets: inherit
 
   argument-comment-lint-release-assets:
     name: argument-comment-lint release assets
+    if: ${{ false }}
     needs: tag-check
     uses: ./.github/workflows/rust-release-argument-comment-lint.yml
     with:
@@ -454,6 +400,7 @@ jobs:
 
   zsh-release-assets:
     name: zsh release assets
+    if: ${{ false }}
     needs: tag-check
     uses: ./.github/workflows/rust-release-zsh.yml
 
@@ -461,8 +408,6 @@ jobs:
     needs:
       - build
       - build-windows
-      - argument-comment-lint-release-assets
-      - zsh-release-assets
     name: release
     runs-on: ubuntu-latest
     permissions:
@@ -573,11 +518,6 @@ jobs:
             --package codex-responses-api-proxy \
             --package codex-sdk
 
-      - name: Stage installer scripts
-        run: |
-          cp scripts/install/install.sh dist/install.sh
-          cp scripts/install/install.ps1 dist/install.ps1
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
         with:
@@ -589,46 +529,12 @@ jobs:
           # (e.g. -alpha, -beta). Otherwise publish a normal release.
           prerelease: ${{ contains(steps.release_name.outputs.name, '-') }}
 
-      - uses: facebook/dotslash-publish-release@9c9ec027515c34db9282a09a25a9cab5880b2c52 # v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag: ${{ github.ref_name }}
-          config: .github/dotslash-config.json
-
-      - uses: facebook/dotslash-publish-release@9c9ec027515c34db9282a09a25a9cab5880b2c52 # v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag: ${{ github.ref_name }}
-          config: .github/dotslash-zsh-config.json
-
-      - uses: facebook/dotslash-publish-release@9c9ec027515c34db9282a09a25a9cab5880b2c52 # v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag: ${{ github.ref_name }}
-          config: .github/dotslash-argument-comment-lint-config.json
-
-      - name: Trigger developers.openai.com deploy
-        # Only trigger the deploy if the release is not a pre-release.
-        # The deploy is used to update the developers.openai.com website with the new config schema json file.
-        if: ${{ !contains(steps.release_name.outputs.name, '-') }}
-        continue-on-error: true
-        env:
-          DEV_WEBSITE_VERCEL_DEPLOY_HOOK_URL: ${{ secrets.DEV_WEBSITE_VERCEL_DEPLOY_HOOK_URL }}
-        run: |
-          if ! curl -sS -f -o /dev/null -X POST "$DEV_WEBSITE_VERCEL_DEPLOY_HOOK_URL"; then
-            echo "::warning title=developers.openai.com deploy hook failed::Vercel deploy hook POST failed for ${GITHUB_REF_NAME}"
-            exit 1
-          fi
-
   # Publish to npm using OIDC authentication.
   # July 31, 2025: https://github.blog/changelog/2025-07-31-npm-trusted-publishing-with-oidc-is-generally-available/
   # npm docs: https://docs.npmjs.com/trusted-publishers
   publish-npm:
     # Publish to npm for stable releases and alpha pre-releases with numeric suffixes.
-    if: ${{ needs.release.outputs.should_publish_npm == 'true' }}
+    if: ${{ needs.release.outputs.should_publish_npm == 'true' && vars.PUBLISH_NPM == 'true' }}
     name: publish-npm
     needs: release
     runs-on: ubuntu-latest
@@ -779,45 +685,3 @@ jobs:
 
             exit "${publish_status}"
           done
-
-  winget:
-    name: winget
-    needs: release
-    # Only publish stable/mainline releases to WinGet; pre-releases include a
-    # '-' in the semver string (e.g., 1.2.3-alpha.1).
-    if: ${{ !contains(needs.release.outputs.version, '-') }}
-    # This job only invokes a GitHub Action to open/update the winget-pkgs PR;
-    # it does not execute Windows-only tooling, so Linux is sufficient.
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - name: Publish to WinGet
-        uses: vedantmgoyal9/winget-releaser@7bd472be23763def6e16bd06cc8b1cdfab0e2fd5
-        with:
-          identifier: OpenAI.Codex
-          version: ${{ needs.release.outputs.version }}
-          release-tag: ${{ needs.release.outputs.tag }}
-          fork-user: openai-oss-forks
-          installers-regex: '^codex-(?:x86_64|aarch64)-pc-windows-msvc\.exe\.zip$'
-          token: ${{ secrets.WINGET_PUBLISH_PAT }}
-
-  update-branch:
-    name: Update latest-alpha-cli branch
-    permissions:
-      contents: write
-    needs: release
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Update latest-alpha-cli branch
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          gh api \
-            repos/${GITHUB_REPOSITORY}/git/refs/heads/latest-alpha-cli \
-            -X PATCH \
-            -f sha="${GITHUB_SHA}" \
-            -F force=true
