@@ -27,6 +27,7 @@ use codex_config::config_toml::ConfigLockfileToml;
 use codex_config::config_toml::ConfigToml;
 use codex_config::config_toml::DEFAULT_PROJECT_DOC_MAX_BYTES;
 use codex_config::config_toml::ProjectConfig;
+use codex_config::config_toml::PromptPilotConfigToml;
 use codex_config::config_toml::RealtimeAudioConfig;
 use codex_config::config_toml::RealtimeConfig;
 use codex_config::config_toml::ThreadStoreToml;
@@ -407,6 +408,9 @@ pub struct Config {
 
     /// Model used specifically for review sessions.
     pub review_model: Option<String>,
+
+    /// PromptPilot prompt enhancement settings.
+    pub prompt_pilot: PromptPilotConfig,
 
     /// Size of the context window for the model, in tokens.
     pub model_context_window: Option<i64>,
@@ -832,6 +836,38 @@ pub struct MultiAgentV2Config {
     pub root_agent_usage_hint_text: Option<String>,
     pub subagent_usage_hint_text: Option<String>,
     pub hide_spawn_agent_metadata: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PromptPilotConfig {
+    pub model: Option<String>,
+    pub base_url: Option<String>,
+    pub api_key_env: Option<String>,
+}
+
+impl From<Option<PromptPilotConfigToml>> for PromptPilotConfig {
+    fn from(config: Option<PromptPilotConfigToml>) -> Self {
+        let Some(config) = config else {
+            return Self::default();
+        };
+
+        Self {
+            model: non_empty_trimmed(config.model),
+            base_url: non_empty_trimmed(config.base_url),
+            api_key_env: config.api_key_env.map(|value| value.trim().to_string()),
+        }
+    }
+}
+
+fn non_empty_trimmed(value: Option<String>) -> Option<String> {
+    value.and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
 }
 
 impl Default for MultiAgentV2Config {
@@ -2981,6 +3017,7 @@ impl Config {
             model,
             service_tier,
             review_model,
+            prompt_pilot: cfg.prompt_pilot.into(),
             model_context_window: cfg.model_context_window,
             model_auto_compact_token_limit: cfg.model_auto_compact_token_limit,
             model_provider_id,

@@ -96,6 +96,9 @@ pub struct ConfigToml {
     /// Review model override used by the `/review` feature.
     pub review_model: Option<String>,
 
+    /// PromptPilot prompt enhancement settings.
+    pub prompt_pilot: Option<PromptPilotConfigToml>,
+
     /// Provider to use from the model_providers map.
     pub model_provider: Option<String>,
 
@@ -460,6 +463,19 @@ pub struct ConfigLockfileToml {
 
     /// Replayable effective config captured in the lockfile.
     pub config: ConfigToml,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct PromptPilotConfigToml {
+    /// Model used only for PromptPilot prompt enhancement.
+    pub model: Option<String>,
+    /// OpenAI-compatible base URL used for PromptPilot when `model` is set.
+    /// Defaults to `https://api.openai.com/v1`.
+    pub base_url: Option<String>,
+    /// Environment variable containing the API key. Defaults to `OPENAI_API_KEY`.
+    /// Set to an empty string to omit the Authorization header for local proxies.
+    pub api_key_env: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]

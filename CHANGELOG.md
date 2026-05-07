@@ -6,6 +6,16 @@ Codex Pilot release tags use the upstream-compatible Rust release format:
 
 For example, `rust-v1.0.0` publishes Codex Pilot `1.0.0`. The OpenAI Codex base for each release is recorded in that release's `Base` section.
 
+## 1.0.1 - 2026-05-07
+
+### Added
+
+- Added optional `[prompt_pilot]` configuration for a separate OpenAI-compatible chat completions model used only for prompt enhancement.
+
+### Changed
+
+- Changed the npm global command from `codex` to `codex-pilot` so Codex Pilot does not conflict with OpenAI Codex CLI installs.
+
 ## 1.0.0 - 2026-05-07
 
 ### Base

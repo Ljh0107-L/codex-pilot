@@ -1,7 +1,9 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::Prompt;
 use crate::client_common::ResponseEvent;
+use crate::config::PromptPilotConfig;
 use crate::session::session::Session;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::error::CodexErr;
@@ -12,8 +14,15 @@ use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_rollout_trace::InferenceTraceContext;
 use futures::StreamExt;
+use reqwest::StatusCode;
 use serde::Deserialize;
+use serde::Serialize;
 use serde_json::json;
+use url::Url;
+
+const DEFAULT_OPENAI_COMPATIBLE_BASE_URL: &str = "https://api.openai.com/v1";
+const DEFAULT_OPENAI_COMPATIBLE_API_KEY_ENV: &str = "OPENAI_API_KEY";
+const OPENAI_COMPATIBLE_REQUEST_TIMEOUT: Duration = Duration::from_secs(90);
 
 const PROMPT_PILOT_INSTRUCTIONS: &str = r#"You are PromptPilot, a prompt refinement helper for OpenAI Codex CLI.
 
@@ -70,6 +79,15 @@ pub(crate) async fn enhance_prompt(
     original_prompt: String,
 ) -> CodexResult<PromptEnhancement> {
     let turn_context = session.new_default_turn().await;
+    if let Some(model) = turn_context.config.prompt_pilot.model.as_deref() {
+        return enhance_prompt_openai_compatible(
+            &turn_context.config.prompt_pilot,
+            model,
+            &original_prompt,
+        )
+        .await;
+    }
+
     session
         .maybe_emit_unknown_model_warning_for_turn(turn_context.as_ref())
         .await;
@@ -111,6 +129,170 @@ pub(crate) async fn enhance_prompt(
         .await?;
 
     parse_prompt_enhancement_output(stream, &original_prompt).await
+}
+
+async fn enhance_prompt_openai_compatible(
+    config: &PromptPilotConfig,
+    model: &str,
+    original_prompt: &str,
+) -> CodexResult<PromptEnhancement> {
+    let base_url = config
+        .base_url
+        .as_deref()
+        .unwrap_or(DEFAULT_OPENAI_COMPATIBLE_BASE_URL);
+    let url = chat_completions_url(base_url)?;
+    let user_content = format!("Original prompt:\n{original_prompt}");
+    let request = ChatCompletionsRequest {
+        model,
+        messages: vec![
+            ChatCompletionMessage {
+                role: "system",
+                content: PROMPT_PILOT_INSTRUCTIONS,
+            },
+            ChatCompletionMessage {
+                role: "user",
+                content: &user_content,
+            },
+        ],
+        response_format: ChatCompletionResponseFormat {
+            kind: "json_object",
+        },
+        stream: false,
+    };
+
+    let client = reqwest::Client::builder()
+        .timeout(OPENAI_COMPATIBLE_REQUEST_TIMEOUT)
+        .build()
+        .map_err(|err| {
+            CodexErr::Fatal(format!("failed to build PromptPilot HTTP client: {err}"))
+        })?;
+    let mut request_builder = client.post(url).json(&request);
+    if let Some(api_key) = prompt_pilot_api_key(config)? {
+        request_builder = request_builder.bearer_auth(api_key);
+    }
+
+    let response = request_builder.send().await.map_err(|err| {
+        CodexErr::Fatal(format!(
+            "PromptPilot OpenAI-compatible request failed: {err}"
+        ))
+    })?;
+    let status = response.status();
+    let body = response.text().await.map_err(|err| {
+        CodexErr::Fatal(format!(
+            "failed to read PromptPilot OpenAI-compatible response: {err}"
+        ))
+    })?;
+    if !status.is_success() {
+        return Err(openai_compatible_status_error(status, &body));
+    }
+
+    let response: ChatCompletionsResponse = serde_json::from_str(&body).map_err(|err| {
+        CodexErr::Fatal(format!(
+            "PromptPilot OpenAI-compatible response was not valid JSON: {err}"
+        ))
+    })?;
+    let raw_output = response
+        .choices
+        .first()
+        .and_then(|choice| choice.message.content.as_deref())
+        .map(str::trim)
+        .filter(|content| !content.is_empty())
+        .ok_or_else(|| {
+            CodexErr::Fatal(
+                "PromptPilot OpenAI-compatible response did not include message content"
+                    .to_string(),
+            )
+        })?;
+
+    parse_prompt_enhancement_json(raw_output, original_prompt)
+}
+
+#[derive(Serialize)]
+struct ChatCompletionsRequest<'a> {
+    model: &'a str,
+    messages: Vec<ChatCompletionMessage<'a>>,
+    response_format: ChatCompletionResponseFormat<'a>,
+    stream: bool,
+}
+
+#[derive(Serialize)]
+struct ChatCompletionMessage<'a> {
+    role: &'a str,
+    content: &'a str,
+}
+
+#[derive(Serialize)]
+struct ChatCompletionResponseFormat<'a> {
+    #[serde(rename = "type")]
+    kind: &'a str,
+}
+
+#[derive(Deserialize)]
+struct ChatCompletionsResponse {
+    choices: Vec<ChatCompletionChoice>,
+}
+
+#[derive(Deserialize)]
+struct ChatCompletionChoice {
+    message: ChatCompletionResponseMessage,
+}
+
+#[derive(Deserialize)]
+struct ChatCompletionResponseMessage {
+    content: Option<String>,
+}
+
+fn chat_completions_url(base_url: &str) -> CodexResult<Url> {
+    let base_url = base_url.trim();
+    if base_url.is_empty() {
+        return Err(CodexErr::Fatal(
+            "prompt_pilot.base_url must not be empty".to_string(),
+        ));
+    }
+    let base_url = if base_url.ends_with('/') {
+        base_url.to_string()
+    } else {
+        format!("{base_url}/")
+    };
+    Url::parse(&base_url)
+        .and_then(|url| url.join("chat/completions"))
+        .map_err(|err| CodexErr::Fatal(format!("prompt_pilot.base_url must be a valid URL: {err}")))
+}
+
+fn prompt_pilot_api_key(config: &PromptPilotConfig) -> CodexResult<Option<String>> {
+    let api_key_env = config
+        .api_key_env
+        .as_deref()
+        .unwrap_or(DEFAULT_OPENAI_COMPATIBLE_API_KEY_ENV);
+    if api_key_env.is_empty() {
+        return Ok(None);
+    }
+
+    let api_key = std::env::var(api_key_env).map_err(|_| {
+        CodexErr::Fatal(format!(
+            "PromptPilot OpenAI-compatible model requires ${api_key_env}; set prompt_pilot.api_key_env = \"\" to omit Authorization"
+        ))
+    })?;
+    let api_key = api_key.trim().to_string();
+    if api_key.is_empty() {
+        return Err(CodexErr::Fatal(format!(
+            "PromptPilot OpenAI-compatible API key from ${api_key_env} is empty"
+        )));
+    }
+    Ok(Some(api_key))
+}
+
+fn openai_compatible_status_error(status: StatusCode, body: &str) -> CodexErr {
+    let body = body.trim();
+    if body.is_empty() {
+        CodexErr::Fatal(format!(
+            "PromptPilot OpenAI-compatible request failed with HTTP {status}"
+        ))
+    } else {
+        CodexErr::Fatal(format!(
+            "PromptPilot OpenAI-compatible request failed with HTTP {status}: {body}"
+        ))
+    }
 }
 
 fn prompt_enhancement_schema() -> serde_json::Value {
@@ -175,6 +357,13 @@ async fn parse_prompt_enhancement_output(
         ));
     }
 
+    parse_prompt_enhancement_json(raw_output, original_prompt)
+}
+
+fn parse_prompt_enhancement_json(
+    raw_output: &str,
+    original_prompt: &str,
+) -> CodexResult<PromptEnhancement> {
     let parsed: ModelPromptEnhancement = serde_json::from_str(raw_output).map_err(|err| {
         CodexErr::Fatal(format!(
             "prompt enhancement response was not valid JSON: {err}"
@@ -217,6 +406,12 @@ mod tests {
     use pretty_assertions::assert_eq;
     use tokio::sync::mpsc;
     use tokio_util::sync::CancellationToken;
+    use wiremock::Mock;
+    use wiremock::MockServer;
+    use wiremock::ResponseTemplate;
+    use wiremock::matchers::body_json;
+    use wiremock::matchers::method;
+    use wiremock::matchers::path;
 
     fn response_stream(
         events: Vec<codex_protocol::error::Result<ResponseEvent>>,
@@ -263,6 +458,62 @@ mod tests {
                 likely_understanding: "Codex should respond to the greeting.".to_string(),
                 enhanced_prompt: "hello".to_string(),
                 changed: false,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn openai_compatible_chat_request_uses_configured_model() {
+        let server = MockServer::start().await;
+        let output = r#"{"likely_understanding":"Codex should fix the login bug.","enhanced_prompt":"Investigate and fix the login bug in this codebase.","changed":true}"#;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .and(body_json(json!({
+                "model": "prompt-optimizer",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": PROMPT_PILOT_INSTRUCTIONS,
+                    },
+                    {
+                        "role": "user",
+                        "content": "Original prompt:\nfix login bug",
+                    },
+                ],
+                "response_format": {
+                    "type": "json_object",
+                },
+                "stream": false,
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "choices": [
+                    {
+                        "message": {
+                            "content": output,
+                        },
+                    },
+                ],
+            })))
+            .mount(&server)
+            .await;
+
+        let config = PromptPilotConfig {
+            model: Some("prompt-optimizer".to_string()),
+            base_url: Some(format!("{}/v1", server.uri())),
+            api_key_env: Some(String::new()),
+        };
+
+        let enhancement =
+            enhance_prompt_openai_compatible(&config, "prompt-optimizer", "fix login bug")
+                .await
+                .expect("enhancement should parse");
+
+        assert_eq!(
+            enhancement,
+            PromptEnhancement {
+                likely_understanding: "Codex should fix the login bug.".to_string(),
+                enhanced_prompt: "Investigate and fix the login bug in this codebase.".to_string(),
+                changed: true,
             }
         );
     }
