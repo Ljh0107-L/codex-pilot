@@ -1,10 +1,10 @@
 {
-  "name": "@openai/codex-sdk",
+  "name": "@ljh0107-l/codex-pilot-sdk",
   "version": "0.0.0-dev",
   "description": "TypeScript SDK for Codex APIs.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/openai/codex.git",
+    "url": "git+https://github.com/Ljh0107-L/codex-pilot.git",
     "directory": "sdk/typescript"
   },
   "keywords": [

@@ -10,6 +10,12 @@ An unofficial OpenAI Codex CLI fork with PromptPilot prompt enhancement.
 
 Codex Pilot is an experimental fork of OpenAI Codex CLI.
 
+## Installation
+
+```bash
+npm install -g @ljh0107-l/codex-pilot
+```
+
 The goal is to provide a lightweight PromptPilot experience in the Codex terminal UI:
 
 - show how Codex is likely to understand your prompt

@@ -41,15 +41,15 @@ export type CodexExecArgs = {
 
 const INTERNAL_ORIGINATOR_ENV = "CODEX_INTERNAL_ORIGINATOR_OVERRIDE";
 const TYPESCRIPT_SDK_ORIGINATOR = "codex_sdk_ts";
-const CODEX_NPM_NAME = "@openai/codex";
+const CODEX_NPM_NAME = "@ljh0107-l/codex-pilot";
 
 const PLATFORM_PACKAGE_BY_TARGET: Record<string, string> = {
-  "x86_64-unknown-linux-musl": "@openai/codex-linux-x64",
-  "aarch64-unknown-linux-musl": "@openai/codex-linux-arm64",
-  "x86_64-apple-darwin": "@openai/codex-darwin-x64",
-  "aarch64-apple-darwin": "@openai/codex-darwin-arm64",
-  "x86_64-pc-windows-msvc": "@openai/codex-win32-x64",
-  "aarch64-pc-windows-msvc": "@openai/codex-win32-arm64",
+  "x86_64-unknown-linux-musl": "@ljh0107-l/codex-pilot-linux-x64",
+  "aarch64-unknown-linux-musl": "@ljh0107-l/codex-pilot-linux-arm64",
+  "x86_64-apple-darwin": "@ljh0107-l/codex-pilot-darwin-x64",
+  "aarch64-apple-darwin": "@ljh0107-l/codex-pilot-darwin-arm64",
+  "x86_64-pc-windows-msvc": "@ljh0107-l/codex-pilot-win32-x64",
+  "aarch64-pc-windows-msvc": "@ljh0107-l/codex-pilot-win32-arm64",
 };
 
 const moduleRequire = createRequire(import.meta.url);
