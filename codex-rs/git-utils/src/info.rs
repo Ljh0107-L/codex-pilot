@@ -60,6 +60,15 @@ pub struct GitDiffToRemote {
     pub diff: String,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct GitWorktreeSummary {
+    pub branch: Option<String>,
+    pub has_changes: bool,
+    pub changed_files: Vec<PathBuf>,
+    pub status_short: String,
+    pub diff_stat: String,
+}
+
 /// Collect git repository information from the given working directory using command-line git.
 /// Returns None if no git repository is found or if git operations fail.
 /// Uses timeouts to prevent freezing on large repositories.
@@ -165,6 +174,53 @@ pub async fn get_has_changes(cwd: &Path) -> Option<bool> {
     }
 
     Some(!output.stdout.is_empty())
+}
+
+pub async fn collect_git_worktree_summary(cwd: &Path) -> Option<GitWorktreeSummary> {
+    let is_git_repo = run_git_command_with_timeout(&["rev-parse", "--git-dir"], cwd)
+        .await?
+        .status
+        .success();
+    if !is_git_repo {
+        return None;
+    }
+
+    let (branch, status_output, diff_stat_output) = tokio::join!(
+        current_branch_name(cwd),
+        run_git_command_with_timeout(&["status", "--short"], cwd),
+        run_git_command_with_timeout(&["diff", "--stat", "HEAD"], cwd)
+    );
+
+    let status_short = status_output
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .unwrap_or_default();
+    let diff_stat = diff_stat_output
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .unwrap_or_default();
+    let changed_files = parse_status_changed_files(&status_short);
+
+    Some(GitWorktreeSummary {
+        branch,
+        has_changes: !status_short.trim().is_empty(),
+        changed_files,
+        status_short: status_short.trim().to_string(),
+        diff_stat: diff_stat.trim().to_string(),
+    })
+}
+
+fn parse_status_changed_files(status_short: &str) -> Vec<PathBuf> {
+    status_short
+        .lines()
+        .filter_map(|line| {
+            let path = line.get(3..)?.trim();
+            let path = path
+                .rsplit_once(" -> ")
+                .map_or(path, |(_, new_path)| new_path);
+            (!path.is_empty()).then(|| PathBuf::from(path))
+        })
+        .collect()
 }
 
 fn parse_git_remote_urls(stdout: &str) -> Option<BTreeMap<String, String>> {
@@ -658,7 +714,7 @@ fn find_ancestor_git_entry(base_dir: &Path) -> Option<(PathBuf, PathBuf)> {
 
     loop {
         let dot_git = dir.join(".git");
-        if dot_git.exists() {
+        if is_valid_git_entry(&dot_git) {
             return Some((dir, dot_git));
         }
 
@@ -672,17 +728,58 @@ fn find_ancestor_git_entry(base_dir: &Path) -> Option<(PathBuf, PathBuf)> {
     None
 }
 
+fn is_valid_git_entry(dot_git: &Path) -> bool {
+    if dot_git.is_dir() {
+        return dot_git.join("HEAD").is_file() || !is_temp_dir_git_entry(dot_git);
+    }
+    if dot_git.is_file()
+        && let Ok(contents) = std::fs::read_to_string(dot_git)
+    {
+        return contents.trim_start().starts_with("gitdir:");
+    }
+    false
+}
+
+fn is_temp_dir_git_entry(dot_git: &Path) -> bool {
+    let temp_dir = std::env::temp_dir();
+    dot_git.file_name() == Some(OsStr::new(".git")) && dot_git.parent() == Some(temp_dir.as_path())
+}
+
 async fn find_ancestor_git_entry_with_fs(
     fs: &dyn ExecutorFileSystem,
     base_dir: &AbsolutePathBuf,
 ) -> Option<(AbsolutePathBuf, AbsolutePathBuf)> {
     for dir in base_dir.ancestors() {
         let dot_git = dir.join(".git");
-        if fs.get_metadata(&dot_git, /*sandbox*/ None).await.is_ok() {
+        if is_valid_git_entry_with_fs(fs, &dot_git).await {
             return Some((dir, dot_git));
         }
     }
     None
+}
+
+async fn is_valid_git_entry_with_fs(
+    fs: &dyn ExecutorFileSystem,
+    dot_git: &AbsolutePathBuf,
+) -> bool {
+    let Ok(metadata) = fs.get_metadata(dot_git, /*sandbox*/ None).await else {
+        return false;
+    };
+    if metadata.is_directory {
+        return fs
+            .get_metadata(&dot_git.join("HEAD"), /*sandbox*/ None)
+            .await
+            .ok()
+            .is_some_and(|metadata| metadata.is_file)
+            || !is_temp_dir_git_entry(dot_git.as_path());
+    }
+    if !metadata.is_file {
+        return false;
+    }
+    fs.read_file_text(dot_git, /*sandbox*/ None)
+        .await
+        .ok()
+        .is_some_and(|contents| contents.trim_start().starts_with("gitdir:"))
 }
 
 /// Returns a list of local git branches.
@@ -723,4 +820,28 @@ pub async fn current_branch_name(cwd: &Path) -> Option<String> {
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|name| !name.is_empty())
+}
+
+#[cfg(test)]
+mod info_tests {
+    use pretty_assertions::assert_eq;
+    use tempfile::TempDir;
+
+    use super::*;
+
+    #[test]
+    fn get_git_repo_root_accepts_nested_empty_git_marker() {
+        let repo = TempDir::new().expect("tempdir");
+        std::fs::create_dir(repo.path().join(".git")).expect("create git marker");
+        let nested = repo.path().join("nested/project");
+        std::fs::create_dir_all(&nested).expect("create nested cwd");
+
+        assert_eq!(get_git_repo_root(&nested), Some(repo.path().to_path_buf()));
+    }
+
+    #[test]
+    fn temp_dir_git_marker_is_ignored_without_head() {
+        let temp_git = std::env::temp_dir().join(".git");
+        assert!(is_temp_dir_git_entry(&temp_git));
+    }
 }

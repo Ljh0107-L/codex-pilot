@@ -648,6 +648,11 @@ impl ChatWidget {
                 },
             ),
             StatusLineItem::RawOutput => self.raw_output_mode().then(|| "raw output".to_string()),
+            StatusLineItem::PromptPilotAce => Some(if self.prompt_pilot_ace_enabled() {
+                "ACE on".to_string()
+            } else {
+                "ACE off".to_string()
+            }),
             StatusLineItem::ThreadTitle => self.thread_name.as_ref().and_then(|name| {
                 let trimmed = name.trim();
                 (!trimmed.is_empty()).then(|| trimmed.to_string())
@@ -690,6 +695,7 @@ impl ChatWidget {
             StatusSurfacePreviewItem::SessionId => StatusLineItem::SessionId,
             StatusSurfacePreviewItem::FastMode => StatusLineItem::FastMode,
             StatusSurfacePreviewItem::RawOutput => StatusLineItem::RawOutput,
+            StatusSurfacePreviewItem::PromptPilotAce => StatusLineItem::PromptPilotAce,
             StatusSurfacePreviewItem::Model => StatusLineItem::ModelName,
             StatusSurfacePreviewItem::ModelWithReasoning => StatusLineItem::ModelWithReasoning,
         };

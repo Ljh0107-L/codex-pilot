@@ -33,6 +33,7 @@ const SIDE_SLASH_COMMAND_UNAVAILABLE_HINT: &str = "Press Esc to return to the ma
 const GOAL_USAGE: &str = "Usage: /goal <objective>";
 const GOAL_USAGE_HINT: &str = "Example: /goal improve benchmark coverage";
 const RAW_USAGE: &str = "Usage: /raw [on|off]";
+const PILOT_USAGE: &str = "Usage: /pilot context [on|off]";
 
 impl ChatWidget {
     /// Dispatch a bare slash command and record its staged local-history entry.
@@ -108,6 +109,27 @@ impl ChatWidget {
     fn emit_raw_output_mode_changed(&self, enabled: bool) {
         self.app_event_tx
             .send(AppEvent::RawOutputModeChanged { enabled });
+    }
+
+    fn handle_pilot_command_args(&mut self, trimmed: &str) {
+        match trimmed.to_ascii_lowercase().as_str() {
+            "context on" => {
+                self.set_prompt_pilot_ace_enabled(/*enabled*/ true);
+                self.add_info_message(
+                    "PromptPilot ACE context is on.".to_string(),
+                    /*hint*/ None,
+                );
+            }
+            "context off" => {
+                self.set_prompt_pilot_ace_enabled(/*enabled*/ false);
+                self.add_info_message(
+                    "PromptPilot ACE context is off.".to_string(),
+                    /*hint*/ None,
+                );
+            }
+            _ => self.add_error_message(PILOT_USAGE.to_string()),
+        }
+        self.request_redraw();
     }
 
     pub(super) fn dispatch_command(&mut self, cmd: SlashCommand) {
@@ -186,6 +208,9 @@ impl ChatWidget {
             }
             SlashCommand::Fast => {
                 self.toggle_fast_mode_from_ui();
+            }
+            SlashCommand::Pilot => {
+                self.add_error_message(PILOT_USAGE.to_string());
             }
             SlashCommand::Realtime => {
                 if !self.realtime_conversation_enabled() {
@@ -625,6 +650,9 @@ impl ChatWidget {
                 }
                 _ => self.add_error_message(RAW_USAGE.to_string()),
             },
+            SlashCommand::Pilot => {
+                self.handle_pilot_command_args(trimmed);
+            }
             SlashCommand::Rename if !trimmed.is_empty() => {
                 if !self.ensure_thread_rename_allowed() {
                     return;
@@ -909,6 +937,7 @@ impl ChatWidget {
             | SlashCommand::Rollout
             | SlashCommand::Copy
             | SlashCommand::Raw
+            | SlashCommand::Pilot
             | SlashCommand::Vim
             | SlashCommand::Diff
             | SlashCommand::Rename

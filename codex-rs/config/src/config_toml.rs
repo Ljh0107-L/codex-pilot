@@ -476,6 +476,12 @@ pub struct PromptPilotConfigToml {
     /// Environment variable containing the API key. Defaults to `OPENAI_API_KEY`.
     /// Set to an empty string to omit the Authorization header for local proxies.
     pub api_key_env: Option<String>,
+    /// Whether ACE context enhancement starts enabled for new TUI sessions.
+    /// Defaults to false.
+    pub ace_default_enabled: Option<bool>,
+    /// Maximum read-only ACE context iterations before PromptPilot must finish.
+    /// Defaults to 5.
+    pub ace_max_iterations: Option<usize>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]

@@ -1,6 +1,8 @@
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyModifiers;
+use crossterm::event::MouseEvent;
+use crossterm::event::MouseEventKind;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Stylize;
@@ -8,6 +10,8 @@ use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
 
+use crate::prompt_pilot::AceProgress;
+use crate::prompt_pilot::AceProgressStep;
 use crate::render::renderable::Renderable;
 
 use super::CancellationEvent;
@@ -151,22 +155,59 @@ pub(crate) struct PromptPilotPreviewView {
     preview: PromptPilotPreview,
     completion: Option<ViewCompletion>,
     composer_replacement: Option<String>,
+    scroll_top: usize,
 }
 
 pub(crate) struct PromptPilotLoadingView {
     original_prompt: String,
+    mode: PromptPilotLoadingMode,
     completion: Option<ViewCompletion>,
+    scroll_top: usize,
+}
+
+enum PromptPilotLoadingMode {
+    Standard,
+    Ace(AceProgress),
 }
 
 impl PromptPilotLoadingView {
     pub(crate) fn new(original_prompt: String) -> Self {
         Self {
             original_prompt,
+            mode: PromptPilotLoadingMode::Standard,
             completion: None,
+            scroll_top: 0,
         }
     }
 
+    pub(crate) fn new_ace(original_prompt: String) -> Self {
+        Self {
+            original_prompt,
+            mode: PromptPilotLoadingMode::Ace(AceProgress::new()),
+            completion: None,
+            scroll_top: 0,
+        }
+    }
+
+    fn update_ace_progress(&mut self, progress: AceProgress) -> bool {
+        let PromptPilotLoadingMode::Ace(current) = &mut self.mode else {
+            return false;
+        };
+        if *current == progress {
+            return false;
+        }
+        *current = progress;
+        true
+    }
+
     fn lines(&self, width: u16) -> Vec<Line<'static>> {
+        match &self.mode {
+            PromptPilotLoadingMode::Standard => self.standard_lines(width),
+            PromptPilotLoadingMode::Ace(progress) => self.ace_lines(width, progress),
+        }
+    }
+
+    fn standard_lines(&self, width: u16) -> Vec<Line<'static>> {
         let wrap_width = usize::from(width.max(1));
         let mut lines = vec![Line::from("PromptPilot".bold())];
         lines.push(Line::from(""));
@@ -183,12 +224,90 @@ impl PromptPilotLoadingView {
         lines.push(vec!["Esc".cyan(), " cancel".into()].into());
         lines
     }
+
+    fn ace_lines(&self, width: u16, progress: &AceProgress) -> Vec<Line<'static>> {
+        let wrap_width = usize::from(width.max(1));
+        let mut lines = vec![Line::from("PromptPilot ACE".bold())];
+        lines.push(Line::from(""));
+        for step in AceProgressStep::ORDER {
+            lines.push(progress_line(progress, step));
+        }
+        if !progress.notes().is_empty() {
+            lines.push(Line::from(""));
+            lines.push(Line::from("Context steps".cyan().bold()));
+            for note in progress.notes() {
+                push_wrapped_bullet(&mut lines, note, wrap_width);
+            }
+        }
+        lines.push(Line::from(""));
+        lines.push(Line::from("Original prompt".cyan().bold()));
+        for wrapped in textwrap::wrap(&self.original_prompt, wrap_width.saturating_sub(2).max(1)) {
+            lines.push(Line::from(format!("> {}", wrapped.into_owned()).dim()));
+        }
+        lines.push(Line::from(""));
+        lines.push(
+            vec![
+                "Scroll: ".into(),
+                "↑/↓".cyan(),
+                " ".into(),
+                "wheel".cyan(),
+                " ".into(),
+                "PgUp/PgDn".cyan(),
+                "   ".into(),
+                "Esc".cyan(),
+                " cancel".into(),
+            ]
+            .into(),
+        );
+        lines
+    }
+}
+
+fn push_wrapped_bullet(lines: &mut Vec<Line<'static>>, text: &str, width: usize) {
+    let wrap_width = width.saturating_sub(2).max(1);
+    for (index, wrapped) in textwrap::wrap(text, wrap_width).into_iter().enumerate() {
+        let prefix = if index == 0 { "• " } else { "  " };
+        lines.push(Line::from(
+            format!("{prefix}{}", wrapped.into_owned()).dim(),
+        ));
+    }
+}
+
+fn progress_line(progress: &AceProgress, step: AceProgressStep) -> Line<'static> {
+    if progress.is_complete(step) {
+        vec!["✓ ".green(), step.label().green()].into()
+    } else if progress.current() == Some(step) {
+        vec!["… ".cyan(), step.label().cyan().bold()].into()
+    } else {
+        vec!["  ".dim(), step.label().dim()].into()
+    }
 }
 
 impl BottomPaneView for PromptPilotLoadingView {
     fn handle_key_event(&mut self, key_event: KeyEvent) {
-        if matches!(key_event.code, KeyCode::Esc) {
-            self.on_ctrl_c();
+        match key_event.code {
+            KeyCode::Esc => {
+                self.on_ctrl_c();
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.scroll_top = self.scroll_top.saturating_sub(1);
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.scroll_top = self.scroll_top.saturating_add(1);
+            }
+            KeyCode::PageUp => {
+                self.scroll_top = self.scroll_top.saturating_sub(8);
+            }
+            KeyCode::PageDown => {
+                self.scroll_top = self.scroll_top.saturating_add(8);
+            }
+            KeyCode::Home => {
+                self.scroll_top = 0;
+            }
+            KeyCode::End => {
+                self.scroll_top = usize::MAX;
+            }
+            _ => {}
         }
     }
 
@@ -207,6 +326,28 @@ impl BottomPaneView for PromptPilotLoadingView {
 
     fn view_id(&self) -> Option<&'static str> {
         Some(LOADING_VIEW_ID)
+    }
+
+    fn update_prompt_pilot_ace_progress(&mut self, progress: AceProgress) -> bool {
+        self.update_ace_progress(progress)
+    }
+
+    fn handle_mouse_event(&mut self, mouse_event: MouseEvent) -> bool {
+        match mouse_event.kind {
+            MouseEventKind::ScrollUp => {
+                self.scroll_top = self.scroll_top.saturating_sub(3);
+                true
+            }
+            MouseEventKind::ScrollDown => {
+                self.scroll_top = self.scroll_top.saturating_add(3);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn wants_mouse_capture(&self) -> bool {
+        true
     }
 }
 
@@ -229,10 +370,15 @@ impl Renderable for PromptPilotLoadingView {
             return;
         }
 
-        for (offset, line) in self
-            .lines(content_area.width)
+        let lines = self.lines(content_area.width);
+        let visible_height = usize::from(content_area.height);
+        let max_scroll = lines.len().saturating_sub(visible_height);
+        let scroll_top = self.scroll_top.min(max_scroll);
+
+        for (offset, line) in lines
             .into_iter()
-            .take(usize::from(content_area.height))
+            .skip(scroll_top)
+            .take(visible_height)
             .enumerate()
         {
             Paragraph::new(line).render(
@@ -254,6 +400,7 @@ impl PromptPilotPreviewView {
             preview,
             completion: None,
             composer_replacement: None,
+            scroll_top: 0,
         }
     }
 
@@ -290,9 +437,14 @@ impl PromptPilotPreviewView {
         lines.push(Line::from(""));
         lines.push(
             vec![
-                "Enter".cyan(),
-                " apply   ".into(),
-                "A".cyan(),
+                "Scroll: ".into(),
+                "↑/↓".cyan(),
+                " ".into(),
+                "wheel".cyan(),
+                " ".into(),
+                "PgUp/PgDn".cyan(),
+                "   ".into(),
+                "Enter/A".cyan(),
                 " apply   ".into(),
                 "Esc".cyan(),
                 " cancel".into(),
@@ -316,6 +468,41 @@ impl BottomPaneView for PromptPilotPreviewView {
                 ..
             } => {
                 self.apply();
+            }
+            KeyEvent {
+                code: KeyCode::Up | KeyCode::Char('k'),
+                ..
+            } => {
+                self.scroll_top = self.scroll_top.saturating_sub(1);
+            }
+            KeyEvent {
+                code: KeyCode::Down | KeyCode::Char('j'),
+                ..
+            } => {
+                self.scroll_top = self.scroll_top.saturating_add(1);
+            }
+            KeyEvent {
+                code: KeyCode::PageUp,
+                ..
+            } => {
+                self.scroll_top = self.scroll_top.saturating_sub(8);
+            }
+            KeyEvent {
+                code: KeyCode::PageDown,
+                ..
+            } => {
+                self.scroll_top = self.scroll_top.saturating_add(8);
+            }
+            KeyEvent {
+                code: KeyCode::Home,
+                ..
+            } => {
+                self.scroll_top = 0;
+            }
+            KeyEvent {
+                code: KeyCode::End, ..
+            } => {
+                self.scroll_top = usize::MAX;
             }
             KeyEvent {
                 code: KeyCode::Char(c),
@@ -359,6 +546,24 @@ impl BottomPaneView for PromptPilotPreviewView {
     fn view_id(&self) -> Option<&'static str> {
         Some(PREVIEW_VIEW_ID)
     }
+
+    fn handle_mouse_event(&mut self, mouse_event: MouseEvent) -> bool {
+        match mouse_event.kind {
+            MouseEventKind::ScrollUp => {
+                self.scroll_top = self.scroll_top.saturating_sub(3);
+                true
+            }
+            MouseEventKind::ScrollDown => {
+                self.scroll_top = self.scroll_top.saturating_add(3);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn wants_mouse_capture(&self) -> bool {
+        true
+    }
 }
 
 impl Renderable for PromptPilotPreviewView {
@@ -380,10 +585,15 @@ impl Renderable for PromptPilotPreviewView {
             return;
         }
 
-        for (offset, line) in self
-            .lines(content_area.width)
+        let lines = self.lines(content_area.width);
+        let visible_height = usize::from(content_area.height);
+        let max_scroll = lines.len().saturating_sub(visible_height);
+        let scroll_top = self.scroll_top.min(max_scroll);
+
+        for (offset, line) in lines
             .into_iter()
-            .take(usize::from(content_area.height))
+            .skip(scroll_top)
+            .take(visible_height)
             .enumerate()
         {
             Paragraph::new(line).render(
@@ -407,7 +617,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use ratatui::buffer::Buffer;
 
-    fn render_snapshot(view: &PromptPilotPreviewView, area: Rect) -> String {
+    fn render_snapshot(view: &dyn Renderable, area: Rect) -> String {
         let mut buf = Buffer::empty(area);
         view.render(area, &mut buf);
         let mut lines = Vec::new();
@@ -488,6 +698,20 @@ mod tests {
 
         assert_snapshot!(
             "prompt_pilot_preview",
+            render_snapshot(
+                &view,
+                Rect::new(0, 0, 80, view.desired_height(/*width*/ 80))
+            )
+        );
+    }
+
+    #[test]
+    fn prompt_pilot_ace_loading_snapshot() {
+        let mut view = PromptPilotLoadingView::new_ace("fix login bug".to_string());
+        view.update_prompt_pilot_ace_progress(AceProgress::building_prompt());
+
+        assert_snapshot!(
+            "prompt_pilot_ace_loading",
             render_snapshot(
                 &view,
                 Rect::new(0, 0, 80, view.desired_height(/*width*/ 80))

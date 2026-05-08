@@ -3957,7 +3957,9 @@ mod tests {
             /*show_fast_status*/ false,
         );
 
-        let rendered = render_transcript(&cell).join("\n");
+        let rendered = render_transcript(&cell)
+            .join("\n")
+            .replace(&format!("(v{CODEX_CLI_VERSION})"), "(v0.0.0)");
         insta::assert_snapshot!(rendered);
     }
 

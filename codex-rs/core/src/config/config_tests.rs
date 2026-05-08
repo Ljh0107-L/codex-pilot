@@ -118,6 +118,33 @@ fn stdio_mcp(command: &str) -> McpServerConfig {
     }
 }
 
+#[test]
+fn prompt_pilot_config_defaults_and_overrides() {
+    let cfg: ConfigToml = toml::from_str(
+        r#"
+        [prompt_pilot]
+        model = "optimizer"
+        base_url = "https://optimizer.example/v1"
+        api_key_env = "OPTIMIZER_API_KEY"
+        ace_default_enabled = true
+        ace_max_iterations = 99
+        "#,
+    )
+    .expect("TOML deserialization should succeed for PromptPilot config");
+
+    assert_eq!(
+        PromptPilotConfig::from(cfg.prompt_pilot),
+        PromptPilotConfig {
+            model: Some("optimizer".to_string()),
+            base_url: Some("https://optimizer.example/v1".to_string()),
+            api_key_env: Some("OPTIMIZER_API_KEY".to_string()),
+            ace_default_enabled: true,
+            ace_max_iterations: 20,
+        }
+    );
+    assert_eq!(PromptPilotConfig::from(None), PromptPilotConfig::default());
+}
+
 fn http_mcp(url: &str) -> McpServerConfig {
     McpServerConfig {
         transport: McpServerTransportConfig::StreamableHttp {
@@ -6996,7 +7023,7 @@ async fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             mcp_servers: Constrained::allow_any(HashMap::new()),
             mcp_oauth_credentials_store_mode: resolve_mcp_oauth_credentials_store_mode(
                 Default::default(),
-                LOCAL_DEV_BUILD_VERSION,
+                env!("CARGO_PKG_VERSION"),
             ),
             mcp_oauth_callback_port: None,
             mcp_oauth_callback_url: None,
@@ -7256,7 +7283,7 @@ async fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         mcp_servers: Constrained::allow_any(HashMap::new()),
         mcp_oauth_credentials_store_mode: resolve_mcp_oauth_credentials_store_mode(
             Default::default(),
-            LOCAL_DEV_BUILD_VERSION,
+            env!("CARGO_PKG_VERSION"),
         ),
         mcp_oauth_callback_port: None,
         mcp_oauth_callback_url: None,
@@ -7415,7 +7442,7 @@ async fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         mcp_servers: Constrained::allow_any(HashMap::new()),
         mcp_oauth_credentials_store_mode: resolve_mcp_oauth_credentials_store_mode(
             Default::default(),
-            LOCAL_DEV_BUILD_VERSION,
+            env!("CARGO_PKG_VERSION"),
         ),
         mcp_oauth_callback_port: None,
         mcp_oauth_callback_url: None,
@@ -7559,7 +7586,7 @@ async fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         mcp_servers: Constrained::allow_any(HashMap::new()),
         mcp_oauth_credentials_store_mode: resolve_mcp_oauth_credentials_store_mode(
             Default::default(),
-            LOCAL_DEV_BUILD_VERSION,
+            env!("CARGO_PKG_VERSION"),
         ),
         mcp_oauth_callback_port: None,
         mcp_oauth_callback_url: None,

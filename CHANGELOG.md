@@ -6,6 +6,45 @@ Codex Pilot release tags use the upstream-compatible Rust release format:
 
 For example, `rust-v1.0.0` publishes Codex Pilot `1.0.0`. The OpenAI Codex base for each release is recorded in that release's `Base` section.
 
+## 1.1.0 - 2026-05-08
+
+### Base
+
+- OpenAI Codex base: `0.129.0`
+- Codex Pilot version: `1.1.0`
+- Release branch: `release/1.1.0`
+
+### Added
+
+- Added PromptPilot ACE, a context-aware prompt enhancement layer for `Ctrl+X`.
+- Added `/pilot context on` and `/pilot context off` for session-scoped ACE control.
+- Added footer status for `ACE on` / `ACE off`.
+- Added read-only project context collection from project docs, `AGENTS.md`, manifests, git status, file search signals, and small source snippets.
+- Added an LLM-driven ACE loop for deciding whether to search files, read snippets, or finish the enhanced prompt.
+- Added conversation distillation so ACE can use relevant prior chat context before project search.
+- Added semantic LLM guardrail review before showing the final preview.
+- Added `[prompt_pilot]` options `ace_default_enabled` and `ace_max_iterations`.
+
+### Changed
+
+- Kept ACE disabled by default unless `ace_default_enabled = true` is configured.
+- Kept ACE apply behavior composer-only; applying an enhanced prompt still does not submit it.
+- Kept `/pilot context on/off` session-scoped and non-persistent.
+- Updated PromptPilot progress and preview surfaces to support scrolling.
+- Limited terminal mouse capture to PromptPilot scrollable surfaces so normal terminal text selection continues to work.
+- Updated README documentation for ACE usage and configuration.
+
+### Not Changed
+
+- Authentication
+- Sandboxing
+- Tool execution
+- File editing logic
+- Approval logic
+- Model provider logic
+- Plan mode
+- Core Codex agent behavior
+
 ## 1.0.1 - 2026-05-07
 
 ### Added

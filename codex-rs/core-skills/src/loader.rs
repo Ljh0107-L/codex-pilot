@@ -12,6 +12,7 @@ use codex_config::ConfigLayerStack;
 use codex_config::ConfigLayerStackOrdering;
 use codex_config::default_project_root_markers;
 use codex_config::merge_toml_values;
+use codex_config::project_root_marker_exists;
 use codex_config::project_root_markers_from_config;
 use codex_exec_server::ExecutorFileSystem;
 use codex_exec_server::LOCAL_FS;
@@ -407,9 +408,9 @@ async fn find_project_root(
     for ancestor in cwd.ancestors() {
         for marker in project_root_markers {
             let marker_path = ancestor.join(marker);
-            match fs.get_metadata(&marker_path, /*sandbox*/ None).await {
-                Ok(_) => return ancestor,
-                Err(err) if err.kind() == io::ErrorKind::NotFound => {}
+            match project_root_marker_exists(fs, &marker_path, marker).await {
+                Ok(true) => return ancestor,
+                Ok(false) => {}
                 Err(err) => {
                     tracing::warn!(
                         "failed to stat project root marker {}: {err:#}",

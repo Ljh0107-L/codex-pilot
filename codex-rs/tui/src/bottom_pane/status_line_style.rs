@@ -44,7 +44,9 @@ impl StatusLineAccent {
             | StatusLineItem::TotalOutputTokens => Self::Usage,
             StatusLineItem::FiveHourLimit | StatusLineItem::WeeklyLimit => Self::Limit,
             StatusLineItem::CodexVersion | StatusLineItem::SessionId => Self::Metadata,
-            StatusLineItem::FastMode | StatusLineItem::RawOutput => Self::Mode,
+            StatusLineItem::FastMode
+            | StatusLineItem::RawOutput
+            | StatusLineItem::PromptPilotAce => Self::Mode,
             StatusLineItem::ThreadTitle => Self::Thread,
             StatusLineItem::TaskProgress => Self::Progress,
         }
@@ -100,7 +102,11 @@ where
         if !spans.is_empty() {
             spans.push(STATUS_LINE_SEPARATOR.dim());
         }
-        let style = if use_theme_colors {
+        let style = if item == StatusLineItem::PromptPilotAce && text == "ACE off" {
+            Style::default().dim()
+        } else if item == StatusLineItem::PromptPilotAce && text == "ACE on" {
+            Style::default().green()
+        } else if use_theme_colors {
             let accent = StatusLineAccent::for_item(item);
             soften_status_line_style(
                 theme_style_for_accent(accent).unwrap_or_else(|| accent.fallback_style()),

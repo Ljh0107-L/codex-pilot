@@ -1,0 +1,14 @@
+---
+source: tui/src/bottom_pane/prompt_pilot.rs
+expression: "render_snapshot(&view, Rect::new(0, 0, 80, view.desired_height(80)))"
+---
+                                                                                
+  PromptPilot ACE                                                               
+                                                                                
+  … generating enhanced prompt                                                  
+    reviewing guardrails                                                        
+                                                                                
+  Original prompt                                                               
+  > fix login bug                                                               
+                                                                                
+  Scroll: ↑/↓ wheel PgUp/PgDn   Esc cancel

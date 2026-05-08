@@ -772,6 +772,8 @@ pub struct ThreadShellCommandResponse {}
 pub struct ThreadPromptEnhanceParams {
     pub thread_id: String,
     pub prompt: String,
+    #[ts(optional = nullable)]
+    pub context_pack_json: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]

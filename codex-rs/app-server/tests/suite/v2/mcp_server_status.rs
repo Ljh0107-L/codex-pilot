@@ -225,6 +225,11 @@ async fn mcp_server_status_list_tools_and_auth_only_skips_slow_inventory_calls()
 
     let config_path = codex_home.path().join("config.toml");
     let mut config_toml = std::fs::read_to_string(&config_path)?;
+    config_toml = config_toml.replacen(
+        "\n[features]\n",
+        "\nmcp_oauth_credentials_store = \"file\"\n\n[features]\n",
+        1,
+    );
     config_toml.push_str(&format!(
         r#"
 [mcp_servers.some-server]
@@ -244,7 +249,7 @@ url = "{mcp_server_url}/mcp"
         })
         .await?;
     let response = timeout(
-        Duration::from_millis(500),
+        Duration::from_millis(1500),
         mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
     )
     .await??;

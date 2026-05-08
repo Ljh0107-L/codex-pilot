@@ -120,6 +120,10 @@ pub(crate) enum StatusLineItem {
     /// Whether raw scrollback mode is currently active.
     RawOutput,
 
+    /// Whether PromptPilot ACE context enhancement is currently active.
+    #[strum(to_string = "ace", serialize = "prompt-pilot-ace")]
+    PromptPilotAce,
+
     /// Current thread title (if set by user).
     ThreadTitle,
 
@@ -167,6 +171,7 @@ impl StatusLineItem {
             }
             StatusLineItem::FastMode => "Whether Fast mode is currently active",
             StatusLineItem::RawOutput => "Whether raw scrollback mode is active",
+            StatusLineItem::PromptPilotAce => "Whether PromptPilot ACE is active",
             StatusLineItem::ThreadTitle => "Current thread title (omitted when unavailable)",
             StatusLineItem::TaskProgress => {
                 "Latest task progress from update_plan (omitted until available)"
@@ -196,6 +201,7 @@ impl StatusLineItem {
             StatusLineItem::SessionId => StatusSurfacePreviewItem::SessionId,
             StatusLineItem::FastMode => StatusSurfacePreviewItem::FastMode,
             StatusLineItem::RawOutput => StatusSurfacePreviewItem::RawOutput,
+            StatusLineItem::PromptPilotAce => StatusSurfacePreviewItem::PromptPilotAce,
             StatusLineItem::ThreadTitle => StatusSurfacePreviewItem::ThreadTitle,
             StatusLineItem::TaskProgress => StatusSurfacePreviewItem::TaskProgress,
         }

@@ -3853,6 +3853,12 @@
     },
     "ThreadPromptEnhanceParams": {
       "properties": {
+        "contextPackJson": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "prompt": {
           "type": "string"
         },

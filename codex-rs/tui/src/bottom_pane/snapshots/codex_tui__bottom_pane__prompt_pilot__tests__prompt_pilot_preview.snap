@@ -26,4 +26,4 @@ expression: "render_snapshot(&view, Rect::new(0, 0, 80, view.desired_height(80))
   5. Run the most relevant formatter and tests, then report what passed or      
   could not be run.                                                             
                                                                                 
-  Enter apply   A apply   Esc cancel
+  Scroll: ↑/↓ wheel PgUp/PgDn   Enter/A apply   Esc cancel

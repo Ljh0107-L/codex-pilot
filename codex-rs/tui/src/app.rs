@@ -1104,6 +1104,9 @@ See the Codex keymap documentation for supported actions and examples."
                 TuiEvent::Key(key_event) => {
                     self.handle_key_event(tui, app_server, key_event).await;
                 }
+                TuiEvent::Mouse(mouse_event) => {
+                    self.chat_widget.handle_mouse_event(mouse_event);
+                }
                 TuiEvent::Paste(pasted) => {
                     // Many terminals convert newlines to \r when pasting (e.g., iTerm2),
                     // but tui-textarea expects \n. Normalize CR to LF.

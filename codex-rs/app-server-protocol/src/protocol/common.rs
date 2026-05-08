@@ -77,6 +77,7 @@ macro_rules! experimental_type_entry {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClientRequestSerializationScope {
     Global(&'static str),
+    GlobalSharedRead(&'static str),
     Thread { thread_id: String },
     ThreadPath { path: PathBuf },
     CommandExecProcess { process_id: String },
@@ -92,6 +93,9 @@ macro_rules! serialization_scope_expr {
     };
     ($actual_params:ident, global($key:literal)) => {
         Some(ClientRequestSerializationScope::Global($key))
+    };
+    ($actual_params:ident, global_shared_read($key:literal)) => {
+        Some(ClientRequestSerializationScope::GlobalSharedRead($key))
     };
     ($actual_params:ident, thread_id($params:ident . $field:ident)) => {
         Some(ClientRequestSerializationScope::Thread {
@@ -590,7 +594,7 @@ client_request_definitions! {
     },
     SkillsList => "skills/list" {
         params: v2::SkillsListParams,
-        serialization: global("config"),
+        serialization: global_shared_read("config"),
         response: v2::SkillsListResponse,
     },
     HooksList => "hooks/list" {
@@ -615,7 +619,7 @@ client_request_definitions! {
     },
     PluginList => "plugin/list" {
         params: v2::PluginListParams,
-        serialization: global("config"),
+        serialization: global_shared_read("config"),
         response: v2::PluginListResponse,
     },
     PluginRead => "plugin/read" {
@@ -952,7 +956,7 @@ client_request_definitions! {
 
     ConfigRead => "config/read" {
         params: v2::ConfigReadParams,
-        serialization: global("config"),
+        serialization: global_shared_read("config"),
         response: v2::ConfigReadResponse,
     },
     ExternalAgentConfigDetect => "externalAgentConfig/detect" {
@@ -1660,6 +1664,31 @@ mod tests {
             Some(ClientRequestSerializationScope::Global("config"))
         );
 
+        let skills_list = ClientRequest::SkillsList {
+            request_id: request_id(),
+            params: v2::SkillsListParams {
+                cwds: Vec::new(),
+                force_reload: false,
+                per_cwd_extra_user_roots: None,
+            },
+        };
+        assert_eq!(
+            skills_list.serialization_scope(),
+            Some(ClientRequestSerializationScope::GlobalSharedRead("config"))
+        );
+
+        let plugin_list = ClientRequest::PluginList {
+            request_id: request_id(),
+            params: v2::PluginListParams {
+                cwds: None,
+                marketplace_kinds: None,
+            },
+        };
+        assert_eq!(
+            plugin_list.serialization_scope(),
+            Some(ClientRequestSerializationScope::GlobalSharedRead("config"))
+        );
+
         let plugin_uninstall = ClientRequest::PluginUninstall {
             request_id: request_id(),
             params: v2::PluginUninstallParams {
@@ -1710,7 +1739,7 @@ mod tests {
         };
         assert_eq!(
             config_read.serialization_scope(),
-            Some(ClientRequestSerializationScope::Global("config"))
+            Some(ClientRequestSerializationScope::GlobalSharedRead("config"))
         );
 
         let account_read = ClientRequest::GetAccount {

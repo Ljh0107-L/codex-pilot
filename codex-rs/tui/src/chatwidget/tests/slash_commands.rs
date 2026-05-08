@@ -1043,6 +1043,60 @@ async fn usage_error_slash_command_is_available_from_local_recall() {
 }
 
 #[tokio::test]
+async fn pilot_context_on_off_updates_session_state_only() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    assert!(!chat.prompt_pilot_ace_enabled());
+
+    chat.dispatch_command_with_args(SlashCommand::Pilot, "context on".to_string(), Vec::new());
+    assert!(chat.prompt_pilot_ace_enabled());
+    let rendered = drain_insert_history(&mut rx)
+        .iter()
+        .map(|cell| lines_to_single_string(cell))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        rendered.contains("PromptPilot ACE context is on."),
+        "expected ACE-on confirmation, got {rendered:?}"
+    );
+
+    chat.dispatch_command_with_args(SlashCommand::Pilot, "context off".to_string(), Vec::new());
+    assert!(!chat.prompt_pilot_ace_enabled());
+}
+
+#[tokio::test]
+async fn pilot_context_default_can_start_enabled_from_config() {
+    let (mut chat, _rx, _op_rx) =
+        make_chatwidget_manual_with_config(/*model_override*/ None, |config| {
+            config.prompt_pilot.ace_default_enabled = true;
+        })
+        .await;
+
+    assert!(chat.prompt_pilot_ace_enabled());
+
+    chat.dispatch_command_with_args(SlashCommand::Pilot, "context off".to_string(), Vec::new());
+    assert!(!chat.prompt_pilot_ace_enabled());
+}
+
+#[tokio::test]
+async fn pilot_invalid_args_show_usage() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command_with_args(SlashCommand::Pilot, "context once".to_string(), Vec::new());
+
+    assert!(!chat.prompt_pilot_ace_enabled());
+    let rendered = drain_insert_history(&mut rx)
+        .iter()
+        .map(|cell| lines_to_single_string(cell))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        rendered.contains("Usage: /pilot context [on|off]"),
+        "expected pilot usage message, got {rendered:?}"
+    );
+}
+
+#[tokio::test]
 async fn unrecognized_slash_command_is_not_added_to_local_recall() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 

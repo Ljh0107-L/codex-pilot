@@ -1,9 +1,11 @@
 use crate::app::app_server_requests::ResolvedAppServerRequest;
 use crate::bottom_pane::ApprovalRequest;
 use crate::bottom_pane::McpServerElicitationFormRequest;
+use crate::prompt_pilot::AceProgress;
 use crate::render::renderable::Renderable;
 use codex_app_server_protocol::ToolRequestUserInputParams;
 use crossterm::event::KeyEvent;
+use crossterm::event::MouseEvent;
 
 use super::CancellationEvent;
 
@@ -19,6 +21,16 @@ pub(crate) trait BottomPaneView: Renderable {
     /// Handle a key event while the view is active. A redraw is always
     /// scheduled after this call.
     fn handle_key_event(&mut self, _key_event: KeyEvent) {}
+
+    /// Handle a mouse event while the view is active. Return true when state changed.
+    fn handle_mouse_event(&mut self, _mouse_event: MouseEvent) -> bool {
+        false
+    }
+
+    /// Return true while the view needs terminal mouse events instead of native text selection.
+    fn wants_mouse_capture(&self) -> bool {
+        false
+    }
 
     /// Return `true` if the view has finished and should be removed.
     fn is_complete(&self) -> bool {
@@ -58,6 +70,11 @@ pub(crate) trait BottomPaneView: Renderable {
     #[allow(dead_code)]
     fn active_tab_id(&self) -> Option<&str> {
         None
+    }
+
+    /// Update PromptPilot ACE progress for views that render that transient state.
+    fn update_prompt_pilot_ace_progress(&mut self, _progress: AceProgress) -> bool {
+        false
     }
 
     /// Handle Ctrl-C while this view is active.

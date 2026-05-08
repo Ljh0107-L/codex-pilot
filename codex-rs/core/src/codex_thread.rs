@@ -387,8 +387,17 @@ impl CodexThread {
         Ok(())
     }
 
-    pub async fn enhance_prompt(&self, prompt: String) -> CodexResult<PromptEnhancement> {
-        crate::prompt_pilot::enhance_prompt(Arc::clone(&self.codex.session), prompt).await
+    pub async fn enhance_prompt(
+        &self,
+        prompt: String,
+        context_pack_json: Option<String>,
+    ) -> CodexResult<PromptEnhancement> {
+        crate::prompt_pilot::enhance_prompt(
+            Arc::clone(&self.codex.session),
+            prompt,
+            context_pack_json,
+        )
+        .await
     }
 
     pub fn rollout_path(&self) -> Option<PathBuf> {

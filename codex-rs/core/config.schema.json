@@ -1936,6 +1936,16 @@
     "PromptPilotConfigToml": {
       "additionalProperties": false,
       "properties": {
+        "ace_default_enabled": {
+          "description": "Whether ACE context enhancement starts enabled for new TUI sessions. Defaults to false.",
+          "type": "boolean"
+        },
+        "ace_max_iterations": {
+          "description": "Maximum read-only ACE context iterations before PromptPilot must finish. Defaults to 5.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
         "api_key_env": {
           "description": "Environment variable containing the API key. Defaults to `OPENAI_API_KEY`. Set to an empty string to omit the Authorization header for local proxies.",
           "type": "string"

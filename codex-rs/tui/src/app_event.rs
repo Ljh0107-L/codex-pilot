@@ -38,6 +38,7 @@ use crate::bottom_pane::PromptPilotPreview;
 use crate::bottom_pane::StatusLineItem;
 use crate::bottom_pane::TerminalTitleItem;
 use crate::chatwidget::UserMessage;
+use crate::prompt_pilot::AceProgress;
 use codex_app_server_protocol::AskForApproval;
 use codex_config::types::ApprovalsReviewer;
 use codex_features::Feature;
@@ -216,6 +217,13 @@ pub(crate) enum AppEvent {
         thread_id: ThreadId,
         request_id: u64,
         prompt: String,
+        context_aware: bool,
+    },
+
+    /// Update transient PromptPilot ACE progress while the enhancement request is running.
+    PromptPilotEnhanceProgress {
+        request_id: u64,
+        progress: AceProgress,
     },
 
     /// Deliver a completed PromptPilot enhancement request back to the chat widget.

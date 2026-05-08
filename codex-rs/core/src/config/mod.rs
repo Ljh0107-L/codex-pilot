@@ -838,11 +838,28 @@ pub struct MultiAgentV2Config {
     pub hide_spawn_agent_metadata: bool,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PromptPilotConfig {
     pub model: Option<String>,
     pub base_url: Option<String>,
     pub api_key_env: Option<String>,
+    pub ace_default_enabled: bool,
+    pub ace_max_iterations: usize,
+}
+
+const DEFAULT_PROMPT_PILOT_ACE_MAX_ITERATIONS: usize = 5;
+const MAX_PROMPT_PILOT_ACE_MAX_ITERATIONS: usize = 20;
+
+impl Default for PromptPilotConfig {
+    fn default() -> Self {
+        Self {
+            model: None,
+            base_url: None,
+            api_key_env: None,
+            ace_default_enabled: false,
+            ace_max_iterations: DEFAULT_PROMPT_PILOT_ACE_MAX_ITERATIONS,
+        }
+    }
 }
 
 impl From<Option<PromptPilotConfigToml>> for PromptPilotConfig {
@@ -855,8 +872,16 @@ impl From<Option<PromptPilotConfigToml>> for PromptPilotConfig {
             model: non_empty_trimmed(config.model),
             base_url: non_empty_trimmed(config.base_url),
             api_key_env: config.api_key_env.map(|value| value.trim().to_string()),
+            ace_default_enabled: config.ace_default_enabled.unwrap_or(false),
+            ace_max_iterations: resolve_prompt_pilot_ace_max_iterations(config.ace_max_iterations),
         }
     }
+}
+
+fn resolve_prompt_pilot_ace_max_iterations(configured: Option<usize>) -> usize {
+    configured
+        .unwrap_or(DEFAULT_PROMPT_PILOT_ACE_MAX_ITERATIONS)
+        .clamp(1, MAX_PROMPT_PILOT_ACE_MAX_ITERATIONS)
 }
 
 fn non_empty_trimmed(value: Option<String>) -> Option<String> {

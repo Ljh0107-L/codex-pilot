@@ -20,6 +20,7 @@ use codex_app_server_protocol::ConfigLayerSource;
 use codex_config::ConfigLayerStackOrdering;
 use codex_config::default_project_root_markers;
 use codex_config::merge_toml_values;
+use codex_config::project_root_marker_exists;
 use codex_config::project_root_markers_from_config;
 use codex_exec_server::Environment;
 use codex_exec_server::ExecutorFileSystem;
@@ -246,13 +247,7 @@ impl<'a> AgentsMdManager<'a> {
             for ancestor in dir.ancestors() {
                 for marker in &project_root_markers {
                     let marker_path = ancestor.join(marker);
-                    let marker_exists = match fs.get_metadata(&marker_path, /*sandbox*/ None).await
-                    {
-                        Ok(_) => true,
-                        Err(err) if err.kind() == io::ErrorKind::NotFound => false,
-                        Err(err) => return Err(err),
-                    };
-                    if marker_exists {
+                    if project_root_marker_exists(fs, &marker_path, marker).await? {
                         project_root = Some(ancestor.clone());
                         break;
                     }

@@ -6,6 +6,14 @@
 
 use super::*;
 use crate::bottom_pane::PromptPilotPreview;
+use crate::legacy_core::config::Config;
+use crate::prompt_pilot::AceProgress;
+use crate::prompt_pilot::AceProgressStep;
+use crate::prompt_pilot::collect_bootstrap_context_pack;
+use crate::prompt_pilot::context_pack_json;
+use crate::prompt_pilot::context_pack_repo_root;
+use crate::prompt_pilot::relative_path;
+use crate::prompt_pilot::retrieve_relevant_files_for_queries;
 use codex_app_server_protocol::HookTrustStatus;
 use codex_app_server_protocol::MarketplaceAddParams;
 use codex_app_server_protocol::MarketplaceAddResponse;
@@ -13,10 +21,23 @@ use codex_app_server_protocol::MarketplaceRemoveParams;
 use codex_app_server_protocol::MarketplaceRemoveResponse;
 use codex_app_server_protocol::MarketplaceUpgradeParams;
 use codex_app_server_protocol::MarketplaceUpgradeResponse;
+use codex_exec_server::LOCAL_FS;
+use serde::Deserialize;
+use serde::Serialize;
 
 use codex_app_server_protocol::RequestId;
 
 use codex_utils_absolute_path::AbsolutePathBuf;
+use std::path::Component;
+use std::path::Path;
+use std::path::PathBuf;
+
+const ACE_CONVERSATION_CONTEXT_PREFIX: &str = "__PROMPT_PILOT_ACE_CONVERSATION_CONTEXT__\n";
+const ACE_AGENT_LOOP_CONTEXT_PREFIX: &str = "__PROMPT_PILOT_ACE_AGENT_LOOP__\n";
+const ACE_GUARDRAIL_CONTEXT_PREFIX: &str = "__PROMPT_PILOT_ACE_GUARDRAIL__\n";
+const MAX_PROMPT_PILOT_CONVERSATION_BLOCKS: usize = 24;
+const MAX_PROMPT_PILOT_CONVERSATION_CHARS: usize = 12_000;
+const MAX_ACE_SNIPPET_BYTES: usize = 2_000;
 
 impl App {
     pub(super) fn prompt_pilot_enhance(
@@ -25,15 +46,73 @@ impl App {
         thread_id: ThreadId,
         request_id: u64,
         prompt: String,
+        context_aware: bool,
     ) {
         let request_handle = app_server.request_handle();
         let app_event_tx = self.app_event_tx.clone();
+        let config = self.config.clone();
+        let conversation_context = if context_aware {
+            self.prompt_pilot_conversation_context()
+        } else {
+            None
+        };
         tokio::spawn(async move {
-            let result = fetch_prompt_pilot_enhancement(request_handle, thread_id, prompt)
+            let result = if context_aware {
+                run_prompt_pilot_ace_agent_loop(
+                    request_handle,
+                    thread_id,
+                    config,
+                    prompt,
+                    conversation_context,
+                    request_id,
+                    app_event_tx.clone(),
+                )
                 .await
-                .map_err(|err| format!("{err:#}"));
+            } else {
+                fetch_prompt_pilot_enhancement(
+                    request_handle,
+                    thread_id,
+                    prompt,
+                    /*context_pack_json*/ None,
+                )
+                .await
+                .map_err(|err| format!("{err:#}"))
+            };
             app_event_tx.send(AppEvent::PromptPilotEnhanceResult { request_id, result });
         });
+    }
+
+    fn prompt_pilot_conversation_context(&self) -> Option<String> {
+        let mut blocks = Vec::new();
+        let mut chars = 0usize;
+        for cell in self.transcript_cells.iter().rev() {
+            let block = lines_to_plain_text(cell.transcript_lines(/*width*/ 120));
+            if block.trim().is_empty() {
+                continue;
+            }
+
+            chars = chars.saturating_add(block.chars().count());
+            blocks.push(block);
+            if blocks.len() >= MAX_PROMPT_PILOT_CONVERSATION_BLOCKS
+                || chars >= MAX_PROMPT_PILOT_CONVERSATION_CHARS
+            {
+                break;
+            }
+        }
+        blocks.reverse();
+
+        if let Some(lines) = self.chat_widget.active_cell_transcript_lines(/*width*/ 120) {
+            let active = lines_to_plain_text(lines);
+            if !active.trim().is_empty() {
+                blocks.push(active);
+            }
+        }
+
+        let context = truncate_chars(
+            blocks.join("\n\n").trim(),
+            MAX_PROMPT_PILOT_CONVERSATION_CHARS,
+        );
+        (!context.trim().is_empty()).then_some(context)
     }
 
     pub(super) fn fetch_mcp_inventory(
@@ -591,6 +670,743 @@ impl App {
     }
 }
 
+#[derive(Serialize)]
+struct AceAgentState<'a> {
+    iteration: usize,
+    max_iterations: usize,
+    force_finish: bool,
+    original_prompt: &'a str,
+    conversation_distillation: Option<&'a AceConversationDistillation>,
+    context_pack: &'a crate::prompt_pilot::ContextPack,
+    observations: &'a [AceAgentObservation],
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct AceConversationDistillation {
+    likely_understanding: String,
+    concise_summary: String,
+    #[serde(default)]
+    hard_constraints: Vec<String>,
+    #[serde(default)]
+    prior_decisions: Vec<String>,
+    #[serde(default)]
+    mentioned_paths: Vec<String>,
+    #[serde(default)]
+    search_hints: Vec<String>,
+    #[serde(default)]
+    uncertainties: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct AceAgentObservation {
+    action: String,
+    summary: String,
+    paths: Vec<String>,
+    snippets: Vec<AceSnippetObservation>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct AceSnippetObservation {
+    path: String,
+    content: String,
+    truncated: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct AceAgentDecision {
+    likely_understanding: String,
+    action: String,
+    reason: String,
+    #[serde(default)]
+    queries: Vec<String>,
+    #[serde(default)]
+    paths: Vec<String>,
+    enhanced_prompt: String,
+}
+
+#[derive(Serialize)]
+struct AceGuardrailInput<'a> {
+    original_prompt: &'a str,
+    conversation_distillation: Option<&'a AceConversationDistillation>,
+    context_pack: &'a crate::prompt_pilot::ContextPack,
+    candidate_likely_understanding: &'a str,
+    candidate_enhanced_prompt: &'a str,
+}
+
+#[derive(Debug, Deserialize)]
+struct AceGuardrailReview {
+    status: String,
+    reason: String,
+    likely_understanding: String,
+    enhanced_prompt: String,
+}
+
+async fn run_prompt_pilot_ace_agent_loop(
+    request_handle: AppServerRequestHandle,
+    thread_id: ThreadId,
+    config: Config,
+    prompt: String,
+    conversation_context: Option<String>,
+    request_id: u64,
+    app_event_tx: AppEventSender,
+) -> Result<PromptPilotPreview, String> {
+    let max_iterations = config.prompt_pilot.ace_max_iterations;
+    let progress_tx = app_event_tx.clone();
+    let mut context_pack = collect_bootstrap_context_pack(&config, &prompt, move |progress| {
+        progress_tx.send(AppEvent::PromptPilotEnhanceProgress {
+            request_id,
+            progress,
+        });
+    })
+    .await;
+    let mut observations = Vec::new();
+    let mut transcript = Vec::new();
+    push_ace_loop_note(
+        &mut transcript,
+        "Collected project context from docs, rules, manifests, and git state",
+    );
+    let conversation_distillation = if let Some(conversation_context) = conversation_context {
+        send_ace_loop_progress(
+            &app_event_tx,
+            request_id,
+            AceProgressStep::GeneratingEnhancedPrompt,
+            &transcript,
+            Some("Distilling conversation context".to_string()),
+        );
+        match fetch_prompt_pilot_ace_conversation_distillation(
+            request_handle.clone(),
+            thread_id,
+            prompt.clone(),
+            conversation_context,
+        )
+        .await
+        {
+            Ok(distillation) => {
+                if conversation_distillation_has_context(&distillation) {
+                    push_ace_loop_note(&mut transcript, "Extracted context from the conversation");
+                } else {
+                    push_ace_loop_note(
+                        &mut transcript,
+                        "No additional conversation context was needed",
+                    );
+                }
+                Some(distillation)
+            }
+            Err(err) => {
+                tracing::warn!(error = %err, "PromptPilot ACE conversation distillation failed");
+                push_ace_loop_note(
+                    &mut transcript,
+                    "Could not extract conversation context; continuing with project context",
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    for iteration in 0..max_iterations {
+        send_ace_loop_progress(
+            &app_event_tx,
+            request_id,
+            AceProgressStep::GeneratingEnhancedPrompt,
+            &transcript,
+            Some(format!(
+                "Checking whether more context is needed ({}/{})",
+                iteration + 1,
+                max_iterations
+            )),
+        );
+
+        let state = AceAgentState {
+            iteration,
+            max_iterations,
+            force_finish: iteration + 1 == max_iterations,
+            original_prompt: &prompt,
+            conversation_distillation: conversation_distillation.as_ref(),
+            context_pack: &context_pack,
+            observations: &observations,
+        };
+        let state_json = serde_json::to_string_pretty(&state).map_err(|err| format!("{err:#}"))?;
+        let decision = fetch_prompt_pilot_ace_agent_step(
+            request_handle.clone(),
+            thread_id,
+            prompt.clone(),
+            state_json,
+        )
+        .await?;
+
+        push_ace_loop_note(
+            &mut transcript,
+            assessment_note_for_action(&decision.action),
+        );
+        match decision.action.as_str() {
+            "finish" => {
+                push_ace_loop_note(&mut transcript, "Drafted an enhanced prompt");
+                send_ace_loop_progress(
+                    &app_event_tx,
+                    request_id,
+                    AceProgressStep::GeneratingEnhancedPrompt,
+                    &transcript,
+                    Some("Building final prompt draft".to_string()),
+                );
+                let enhanced_prompt = decision.enhanced_prompt.trim().to_string();
+                if enhanced_prompt.is_empty() {
+                    return Err("PromptPilot ACE returned an empty enhanced prompt".to_string());
+                }
+                let likely_understanding = if decision.likely_understanding.trim().is_empty() {
+                    prompt.clone()
+                } else {
+                    decision.likely_understanding.trim().to_string()
+                };
+                let preview =
+                    PromptPilotPreview::new(prompt, likely_understanding, enhanced_prompt);
+                return review_prompt_pilot_ace_guardrails(
+                    request_handle,
+                    thread_id,
+                    &context_pack,
+                    conversation_distillation.as_ref(),
+                    preview,
+                    request_id,
+                    &app_event_tx,
+                    &transcript,
+                )
+                .await;
+            }
+            "search_files" => {
+                let repo_root = context_pack_repo_root(&context_pack).to_path_buf();
+                let queries = non_empty_limited(decision.queries, 6);
+                if queries.is_empty() {
+                    observations.push(AceAgentObservation {
+                        action: decision.action,
+                        summary: "Model requested file search without queries.".to_string(),
+                        paths: Vec::new(),
+                        snippets: Vec::new(),
+                    });
+                    push_ace_loop_note(
+                        &mut transcript,
+                        "Skipped file search because no query was available",
+                    );
+                    send_ace_loop_progress(
+                        &app_event_tx,
+                        request_id,
+                        AceProgressStep::GeneratingEnhancedPrompt,
+                        &transcript,
+                        None,
+                    );
+                    continue;
+                }
+
+                push_ace_loop_note(&mut transcript, "Searching the codebase for relevant files");
+                send_ace_loop_progress(
+                    &app_event_tx,
+                    request_id,
+                    AceProgressStep::GeneratingEnhancedPrompt,
+                    &transcript,
+                    Some("Searching project files".to_string()),
+                );
+
+                let files = retrieve_relevant_files_for_queries(&repo_root, &queries).await;
+                let paths = files
+                    .iter()
+                    .map(|file| file.path.display().to_string())
+                    .collect::<Vec<_>>();
+                merge_relevant_files(&mut context_pack.relevant_files, files);
+                observations.push(AceAgentObservation {
+                    action: decision.action,
+                    summary: fallback_reason(&decision.reason),
+                    paths,
+                    snippets: Vec::new(),
+                });
+                let observation = observations
+                    .last()
+                    .expect("search observation should have been recorded");
+                push_ace_loop_note(&mut transcript, search_result_note(observation));
+                send_ace_loop_progress(
+                    &app_event_tx,
+                    request_id,
+                    AceProgressStep::GeneratingEnhancedPrompt,
+                    &transcript,
+                    None,
+                );
+            }
+            "read_small_snippets" => {
+                let repo_root = context_pack_repo_root(&context_pack).to_path_buf();
+                let paths = non_empty_limited(decision.paths, 5);
+                push_ace_loop_note(&mut transcript, "Reading snippets from likely files");
+                send_ace_loop_progress(
+                    &app_event_tx,
+                    request_id,
+                    AceProgressStep::GeneratingEnhancedPrompt,
+                    &transcript,
+                    Some("Reading source snippets".to_string()),
+                );
+                let snippets = read_small_snippets(&repo_root, &paths).await;
+                let observed_paths = snippets
+                    .iter()
+                    .map(|snippet| snippet.path.clone())
+                    .collect::<Vec<_>>();
+                for path in &observed_paths {
+                    add_observed_relevant_file(&mut context_pack.relevant_files, path);
+                }
+                observations.push(AceAgentObservation {
+                    action: decision.action,
+                    summary: decision.reason.trim().to_string(),
+                    paths: observed_paths,
+                    snippets,
+                });
+                let observation = observations
+                    .last()
+                    .expect("snippet observation should have been recorded");
+                push_ace_loop_note(&mut transcript, snippet_result_note(observation));
+                send_ace_loop_progress(
+                    &app_event_tx,
+                    request_id,
+                    AceProgressStep::GeneratingEnhancedPrompt,
+                    &transcript,
+                    None,
+                );
+            }
+            other => {
+                return Err(format!("PromptPilot ACE returned unknown action `{other}`"));
+            }
+        }
+    }
+
+    send_ace_loop_progress(
+        &app_event_tx,
+        request_id,
+        AceProgressStep::GeneratingEnhancedPrompt,
+        &transcript,
+        Some("Reached iteration limit; drafting from collected context".to_string()),
+    );
+    let context_json =
+        ace_compiler_context_json(&context_pack, conversation_distillation.as_ref())?;
+    let preview = fetch_prompt_pilot_enhancement(
+        request_handle.clone(),
+        thread_id,
+        prompt,
+        Some(context_json),
+    )
+    .await
+    .map_err(|err| format!("{err:#}"))?;
+    review_prompt_pilot_ace_guardrails(
+        request_handle,
+        thread_id,
+        &context_pack,
+        conversation_distillation.as_ref(),
+        preview,
+        request_id,
+        &app_event_tx,
+        &transcript,
+    )
+    .await
+}
+
+async fn fetch_prompt_pilot_ace_agent_step(
+    request_handle: AppServerRequestHandle,
+    thread_id: ThreadId,
+    prompt: String,
+    state_json: String,
+) -> Result<AceAgentDecision, String> {
+    let preview = fetch_prompt_pilot_enhancement(
+        request_handle,
+        thread_id,
+        prompt,
+        Some(format!("{ACE_AGENT_LOOP_CONTEXT_PREFIX}{state_json}")),
+    )
+    .await
+    .map_err(|err| format!("{err:#}"))?;
+    serde_json::from_str::<AceAgentDecision>(&preview.enhanced_prompt)
+        .map_err(|err| format!("PromptPilot ACE agent response was invalid: {err}"))
+}
+
+async fn fetch_prompt_pilot_ace_conversation_distillation(
+    request_handle: AppServerRequestHandle,
+    thread_id: ThreadId,
+    prompt: String,
+    conversation_context: String,
+) -> Result<AceConversationDistillation, String> {
+    #[derive(Serialize)]
+    struct ConversationDistillationInput<'a> {
+        original_prompt: &'a str,
+        recent_conversation: &'a str,
+    }
+
+    let input = ConversationDistillationInput {
+        original_prompt: &prompt,
+        recent_conversation: &conversation_context,
+    };
+    let input_json = serde_json::to_string_pretty(&input).map_err(|err| format!("{err:#}"))?;
+    let preview = fetch_prompt_pilot_enhancement(
+        request_handle,
+        thread_id,
+        prompt,
+        Some(format!("{ACE_CONVERSATION_CONTEXT_PREFIX}{input_json}")),
+    )
+    .await
+    .map_err(|err| format!("{err:#}"))?;
+    serde_json::from_str::<AceConversationDistillation>(&preview.enhanced_prompt)
+        .map_err(|err| format!("PromptPilot ACE conversation response was invalid: {err}"))
+}
+
+async fn review_prompt_pilot_ace_guardrails(
+    request_handle: AppServerRequestHandle,
+    thread_id: ThreadId,
+    context_pack: &crate::prompt_pilot::ContextPack,
+    conversation_distillation: Option<&AceConversationDistillation>,
+    preview: PromptPilotPreview,
+    request_id: u64,
+    app_event_tx: &AppEventSender,
+    transcript: &[String],
+) -> Result<PromptPilotPreview, String> {
+    send_ace_loop_progress(
+        app_event_tx,
+        request_id,
+        AceProgressStep::ReviewingGuardrails,
+        transcript,
+        Some("Checking the draft before preview".to_string()),
+    );
+    let input = AceGuardrailInput {
+        original_prompt: &preview.original_prompt,
+        conversation_distillation,
+        context_pack,
+        candidate_likely_understanding: &preview.understanding,
+        candidate_enhanced_prompt: &preview.enhanced_prompt,
+    };
+    let input_json = serde_json::to_string_pretty(&input).map_err(|err| format!("{err:#}"))?;
+    let review = fetch_prompt_pilot_ace_guardrail_review(
+        request_handle,
+        thread_id,
+        preview.original_prompt.clone(),
+        input_json,
+    )
+    .await?;
+
+    let reviewed_preview = match review.status.as_str() {
+        "pass" | "repair" => {
+            let likely_understanding = if review.likely_understanding.trim().is_empty() {
+                preview.understanding
+            } else {
+                review.likely_understanding.trim().to_string()
+            };
+            let enhanced_prompt = if review.enhanced_prompt.trim().is_empty() {
+                preview.enhanced_prompt
+            } else {
+                review.enhanced_prompt.trim().to_string()
+            };
+            PromptPilotPreview::new(
+                preview.original_prompt,
+                likely_understanding,
+                enhanced_prompt,
+            )
+        }
+        "fail" => {
+            return Err(format!(
+                "PromptPilot ACE skipped enhancement because semantic guardrails failed: {}",
+                fallback_reason(&review.reason)
+            ));
+        }
+        other => {
+            return Err(format!(
+                "PromptPilot ACE guardrail review returned unknown status `{other}`"
+            ));
+        }
+    };
+
+    if reviewed_preview.enhanced_prompt.trim().is_empty() {
+        return Err("PromptPilot ACE guardrail review returned an empty prompt".to_string());
+    }
+    Ok(reviewed_preview)
+}
+
+async fn fetch_prompt_pilot_ace_guardrail_review(
+    request_handle: AppServerRequestHandle,
+    thread_id: ThreadId,
+    prompt: String,
+    input_json: String,
+) -> Result<AceGuardrailReview, String> {
+    let preview = fetch_prompt_pilot_enhancement(
+        request_handle,
+        thread_id,
+        prompt,
+        Some(format!("{ACE_GUARDRAIL_CONTEXT_PREFIX}{input_json}")),
+    )
+    .await
+    .map_err(|err| format!("{err:#}"))?;
+    serde_json::from_str::<AceGuardrailReview>(&preview.enhanced_prompt)
+        .map_err(|err| format!("PromptPilot ACE guardrail response was invalid: {err}"))
+}
+
+fn send_ace_loop_progress(
+    app_event_tx: &AppEventSender,
+    request_id: u64,
+    step: AceProgressStep,
+    transcript: &[String],
+    active_note: Option<String>,
+) {
+    let mut progress = AceProgress::running(step);
+    for note in transcript {
+        progress.add_note(note.clone());
+    }
+    if let Some(active_note) = active_note {
+        progress.add_note(active_note);
+    }
+    app_event_tx.send(AppEvent::PromptPilotEnhanceProgress {
+        request_id,
+        progress,
+    });
+}
+
+fn ace_compiler_context_json(
+    context_pack: &crate::prompt_pilot::ContextPack,
+    conversation_distillation: Option<&AceConversationDistillation>,
+) -> Result<String, String> {
+    match conversation_distillation {
+        Some(conversation_distillation) => serde_json::to_string_pretty(&serde_json::json!({
+            "conversation_distillation": conversation_distillation,
+            "context_pack": context_pack,
+        }))
+        .map_err(|err| format!("{err:#}")),
+        None => context_pack_json(context_pack).map_err(|err| format!("{err:#}")),
+    }
+}
+
+fn conversation_distillation_has_context(distillation: &AceConversationDistillation) -> bool {
+    !distillation.hard_constraints.is_empty()
+        || !distillation.prior_decisions.is_empty()
+        || !distillation.mentioned_paths.is_empty()
+        || !distillation.search_hints.is_empty()
+        || !distillation.uncertainties.is_empty()
+}
+
+fn push_ace_loop_note(transcript: &mut Vec<String>, note: impl Into<String>) {
+    let note = trim_progress_text(&note.into());
+    if transcript.last() != Some(&note) {
+        transcript.push(note);
+    }
+}
+
+fn assessment_note_for_action(action: &str) -> &'static str {
+    match action {
+        "search_files" => "Assessed context: more file context is needed",
+        "read_small_snippets" => "Assessed context: likely files should be inspected",
+        "finish" => "Assessed context: enough context to draft",
+        _ => "Assessed collected context",
+    }
+}
+
+fn search_result_note(observation: &AceAgentObservation) -> String {
+    if observation.paths.is_empty() {
+        return "No matching files found yet".to_string();
+    }
+
+    let paths = high_signal_paths(&observation.paths, 3);
+    if paths.is_empty() {
+        return format!(
+            "Found {} candidate file(s); still looking for higher-signal source files",
+            observation.paths.len()
+        );
+    }
+
+    let remaining = observation.paths.len().saturating_sub(paths.len());
+    if remaining == 0 {
+        format!("Found likely files: {}", paths.join(", "))
+    } else {
+        format!(
+            "Found likely files: {} (+{remaining} more)",
+            paths.join(", ")
+        )
+    }
+}
+
+fn snippet_result_note(observation: &AceAgentObservation) -> String {
+    if observation.paths.is_empty() {
+        return "No snippets were read from the requested files".to_string();
+    }
+
+    let paths = display_paths(&observation.paths, 3);
+    let remaining = observation.paths.len().saturating_sub(paths.len());
+    if remaining == 0 {
+        format!("Read snippets from: {}", paths.join(", "))
+    } else {
+        format!(
+            "Read snippets from: {} (+{remaining} more)",
+            paths.join(", ")
+        )
+    }
+}
+
+fn high_signal_paths(paths: &[String], limit: usize) -> Vec<String> {
+    paths
+        .iter()
+        .filter(|path| !is_low_signal_display_path(path))
+        .take(limit)
+        .cloned()
+        .collect()
+}
+
+fn display_paths(paths: &[String], limit: usize) -> Vec<String> {
+    paths.iter().take(limit).cloned().collect()
+}
+
+fn is_low_signal_display_path(path: &str) -> bool {
+    let path = path.replace('\\', "/").to_ascii_lowercase();
+    path.contains("/snapshots/")
+        || path.contains("/fixtures/")
+        || path.contains("/testdata/")
+        || path.contains("/schema/")
+        || path.ends_with(".snap")
+        || path.ends_with(".snap.new")
+}
+
+fn fallback_reason(reason: &str) -> String {
+    let reason = reason.trim();
+    if reason.is_empty() {
+        "no reason provided".to_string()
+    } else {
+        trim_progress_text(reason)
+    }
+}
+
+fn trim_progress_text(text: &str) -> String {
+    const MAX_PROGRESS_TEXT_CHARS: usize = 220;
+    let mut chars = text.chars();
+    let trimmed = chars
+        .by_ref()
+        .take(MAX_PROGRESS_TEXT_CHARS)
+        .collect::<String>();
+    if chars.next().is_some() {
+        format!("{trimmed}...")
+    } else {
+        trimmed
+    }
+}
+
+fn lines_to_plain_text(lines: Vec<ratatui::text::Line<'static>>) -> String {
+    lines
+        .into_iter()
+        .map(|line| {
+            line.spans
+                .into_iter()
+                .map(|span| span.content.into_owned())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
+fn truncate_chars(text: &str, max_chars: usize) -> String {
+    let mut chars = text.chars();
+    let truncated = chars.by_ref().take(max_chars).collect::<String>();
+    if chars.next().is_some() {
+        format!("{truncated}\n[conversation truncated]")
+    } else {
+        truncated
+    }
+}
+
+fn non_empty_limited(values: Vec<String>, limit: usize) -> Vec<String> {
+    values
+        .into_iter()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .take(limit)
+        .collect()
+}
+
+fn merge_relevant_files(
+    existing: &mut Vec<crate::prompt_pilot::RelevantFileBlock>,
+    files: Vec<crate::prompt_pilot::RelevantFileBlock>,
+) {
+    for file in files {
+        if let Some(current) = existing
+            .iter_mut()
+            .find(|current| current.path == file.path)
+        {
+            current.confidence = current.confidence.max(file.confidence);
+            for evidence in file.evidence {
+                if !current.evidence.contains(&evidence) {
+                    current.evidence.push(evidence);
+                }
+            }
+        } else {
+            existing.push(file);
+        }
+    }
+}
+
+fn add_observed_relevant_file(
+    relevant_files: &mut Vec<crate::prompt_pilot::RelevantFileBlock>,
+    path: &str,
+) {
+    let path = PathBuf::from(path);
+    if let Some(file) = relevant_files.iter_mut().find(|file| file.path == path) {
+        let evidence = "small snippet read by ACE agent".to_string();
+        if !file.evidence.contains(&evidence) {
+            file.evidence.push(evidence);
+        }
+        file.confidence = file.confidence.max(0.65);
+        return;
+    }
+
+    relevant_files.push(crate::prompt_pilot::RelevantFileBlock {
+        path,
+        reason: "small snippet read by ACE agent".to_string(),
+        confidence: 0.65,
+        evidence: vec!["small snippet read by ACE agent".to_string()],
+    });
+}
+
+async fn read_small_snippets(repo_root: &Path, paths: &[String]) -> Vec<AceSnippetObservation> {
+    let mut snippets = Vec::new();
+    for path in paths {
+        let Some(relative) = safe_relative_path(path) else {
+            continue;
+        };
+        let absolute_path = repo_root.join(&relative);
+        let Ok(absolute) = AbsolutePathBuf::from_absolute_path(&absolute_path) else {
+            continue;
+        };
+        let Ok(mut bytes) = LOCAL_FS.read_file(&absolute, /*sandbox*/ None).await else {
+            continue;
+        };
+        if bytes.contains(&0) {
+            continue;
+        }
+        let truncated = bytes.len() > MAX_ACE_SNIPPET_BYTES;
+        if truncated {
+            bytes.truncate(MAX_ACE_SNIPPET_BYTES);
+        }
+        snippets.push(AceSnippetObservation {
+            path: relative_path(&absolute_path, repo_root)
+                .display()
+                .to_string(),
+            content: String::from_utf8_lossy(&bytes).trim().to_string(),
+            truncated,
+        });
+    }
+    snippets
+}
+
+fn safe_relative_path(path: &str) -> Option<PathBuf> {
+    let path = path.trim_matches(|ch| matches!(ch, '`' | '"' | '\'' | ' '));
+    if path.is_empty() {
+        return None;
+    }
+    let path = PathBuf::from(path);
+    if path.is_absolute()
+        || path
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+    {
+        return None;
+    }
+    Some(path)
+}
+
 pub(super) async fn fetch_all_mcp_server_statuses(
     request_handle: AppServerRequestHandle,
     detail: McpServerStatusDetail,
@@ -641,6 +1457,7 @@ pub(super) async fn fetch_prompt_pilot_enhancement(
     request_handle: AppServerRequestHandle,
     thread_id: ThreadId,
     prompt: String,
+    context_pack_json: Option<String>,
 ) -> Result<PromptPilotPreview> {
     let request_id = RequestId::String(format!("prompt-pilot-{}", Uuid::new_v4()));
     let response: ThreadPromptEnhanceResponse = request_handle
@@ -649,6 +1466,7 @@ pub(super) async fn fetch_prompt_pilot_enhancement(
             params: ThreadPromptEnhanceParams {
                 thread_id: thread_id.to_string(),
                 prompt: prompt.clone(),
+                context_pack_json,
             },
         })
         .await

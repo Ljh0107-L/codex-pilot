@@ -174,6 +174,7 @@ use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
+use crossterm::event::MouseEvent;
 use rand::Rng;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -379,7 +380,7 @@ use unicode_segmentation::UnicodeSegmentation;
 const USER_SHELL_COMMAND_HELP_TITLE: &str = "Prefix a command with ! to run it locally";
 const USER_SHELL_COMMAND_HELP_HINT: &str = "Example: !ls";
 const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
-const DEFAULT_STATUS_LINE_ITEMS: [&str; 2] = ["model-with-reasoning", "current-dir"];
+const DEFAULT_STATUS_LINE_ITEMS: [&str; 3] = ["model-with-reasoning", "current-dir", "ace"];
 // Track information about an in-flight exec command.
 struct RunningCommand {
     command: Vec<String>,
@@ -1038,6 +1039,7 @@ pub(crate) struct ChatWidget {
     last_non_retry_error: Option<(String, String)>,
     next_prompt_pilot_request_id: u64,
     active_prompt_pilot_request_id: Option<u64>,
+    prompt_pilot_ace_enabled: bool,
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -4895,6 +4897,7 @@ impl ChatWidget {
         let active_cell = Some(Self::placeholder_session_header_cell(&config));
 
         let current_cwd = Some(config.cwd.to_path_buf());
+        let prompt_pilot_ace_enabled = config.prompt_pilot.ace_default_enabled;
         let effective_service_tier = config
             .service_tier
             .as_deref()
@@ -5071,6 +5074,7 @@ impl ChatWidget {
             last_non_retry_error: None,
             next_prompt_pilot_request_id: 0,
             active_prompt_pilot_request_id: None,
+            prompt_pilot_ace_enabled,
         };
 
         widget.prefetch_rate_limits();
@@ -5353,6 +5357,12 @@ impl ChatWidget {
         }
     }
 
+    pub(crate) fn handle_mouse_event(&mut self, mouse_event: MouseEvent) {
+        if self.bottom_pane.has_active_view() {
+            self.bottom_pane.handle_mouse_event(mouse_event);
+        }
+    }
+
     /// Attach a local image to the composer when the active model supports image inputs.
     ///
     /// When the model does not advertise image support, we keep the draft unchanged and surface a
@@ -5406,13 +5416,45 @@ impl ChatWidget {
         self.next_prompt_pilot_request_id = self.next_prompt_pilot_request_id.saturating_add(1);
         self.active_prompt_pilot_request_id = Some(request_id);
         let prompt = prompt.to_string();
-        self.bottom_pane.show_prompt_pilot_loading(prompt.clone());
+        let context_aware = self.prompt_pilot_ace_enabled;
+        if context_aware {
+            self.bottom_pane
+                .show_prompt_pilot_ace_loading(prompt.clone());
+        } else {
+            self.bottom_pane.show_prompt_pilot_loading(prompt.clone());
+        }
         self.app_event_tx.send(AppEvent::PromptPilotEnhance {
             thread_id,
             request_id,
             prompt,
+            context_aware,
         });
         self.request_redraw();
+    }
+
+    pub(crate) fn prompt_pilot_ace_enabled(&self) -> bool {
+        self.prompt_pilot_ace_enabled
+    }
+
+    fn set_prompt_pilot_ace_enabled(&mut self, enabled: bool) {
+        if self.prompt_pilot_ace_enabled == enabled {
+            return;
+        }
+        self.prompt_pilot_ace_enabled = enabled;
+        self.refresh_status_surfaces();
+    }
+
+    pub(crate) fn on_prompt_pilot_enhance_progress(
+        &mut self,
+        request_id: u64,
+        progress: crate::prompt_pilot::AceProgress,
+    ) {
+        if self.active_prompt_pilot_request_id != Some(request_id) {
+            return;
+        }
+        if self.bottom_pane.update_prompt_pilot_ace_progress(progress) {
+            self.request_redraw();
+        }
     }
 
     pub(crate) fn on_prompt_pilot_enhance_result(
@@ -5432,7 +5474,12 @@ impl ChatWidget {
             }
             Err(message) => {
                 if self.bottom_pane.close_prompt_pilot_loading() {
-                    self.add_error_message(format!("PromptPilot failed: {message}"));
+                    let display_message = if message.starts_with("PromptPilot ") {
+                        message
+                    } else {
+                        format!("PromptPilot failed: {message}")
+                    };
+                    self.add_error_message(display_message);
                 }
             }
         }

@@ -42,6 +42,7 @@ use codex_protocol::user_input::TextElement;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
+use crossterm::event::MouseEvent;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::text::Line;
@@ -218,6 +219,7 @@ pub(crate) struct BottomPane {
     has_input_focus: bool,
     enhanced_keys_supported: bool,
     disable_paste_burst: bool,
+    mouse_capture_enabled: bool,
     is_task_running: bool,
     esc_backtrack_hint: bool,
     animations_enabled: bool,
@@ -283,6 +285,7 @@ impl BottomPane {
             has_input_focus,
             enhanced_keys_supported,
             disable_paste_burst,
+            mouse_capture_enabled: false,
             is_task_running: false,
             status: None,
             unified_exec_footer: UnifiedExecFooter::new(),
@@ -475,6 +478,7 @@ impl BottomPane {
 
     fn push_view(&mut self, view: Box<dyn BottomPaneView>) {
         self.view_stack.push(view);
+        self.sync_mouse_capture_for_active_view();
         self.schedule_active_view_frame();
         self.request_redraw();
     }
@@ -499,6 +503,7 @@ impl BottomPane {
                 None => {}
             }
             self.on_view_stack_depth_decreased();
+            self.sync_mouse_capture_for_active_view();
         }
     }
 
@@ -667,6 +672,16 @@ impl BottomPane {
         }
     }
 
+    pub fn handle_mouse_event(&mut self, mouse_event: MouseEvent) -> InputResult {
+        let Some(view) = self.view_stack.last_mut() else {
+            return InputResult::None;
+        };
+        if view.handle_mouse_event(mouse_event) {
+            self.request_redraw();
+        }
+        InputResult::None
+    }
+
     /// Handles a Ctrl+C press within the bottom pane.
     ///
     /// An active modal view is given the first chance to consume the key (typically to dismiss
@@ -711,6 +726,7 @@ impl BottomPane {
             if view_complete {
                 self.view_stack.clear();
                 self.on_active_view_complete();
+                self.sync_mouse_capture_for_active_view();
             }
             if needs_redraw || view_complete {
                 self.request_redraw();
@@ -1245,6 +1261,28 @@ impl BottomPane {
         self.push_view(Box::new(PromptPilotLoadingView::new(original_prompt)));
     }
 
+    pub(crate) fn show_prompt_pilot_ace_loading(&mut self, original_prompt: String) {
+        self.push_view(Box::new(PromptPilotLoadingView::new_ace(original_prompt)));
+    }
+
+    pub(crate) fn update_prompt_pilot_ace_progress(
+        &mut self,
+        progress: crate::prompt_pilot::AceProgress,
+    ) -> bool {
+        let Some(view) = self.view_stack.last_mut() else {
+            return false;
+        };
+        if view.view_id() != Some(PROMPT_PILOT_LOADING_VIEW_ID) {
+            return false;
+        }
+        if view.update_prompt_pilot_ace_progress(progress) {
+            self.request_redraw();
+            true
+        } else {
+            false
+        }
+    }
+
     pub(crate) fn replace_prompt_pilot_loading_with_preview(
         &mut self,
         preview: PromptPilotPreview,
@@ -1257,6 +1295,7 @@ impl BottomPane {
         }
 
         *view = Box::new(PromptPilotPreviewView::new(preview));
+        self.sync_mouse_capture_for_active_view();
         self.request_redraw();
         true
     }
@@ -1270,6 +1309,7 @@ impl BottomPane {
 
         self.view_stack.pop();
         self.on_view_stack_depth_decreased();
+        self.sync_mouse_capture_for_active_view();
         self.request_redraw();
         true
     }
@@ -1461,8 +1501,23 @@ impl BottomPane {
             self.view_stack.remove(index);
         }
         self.on_view_stack_depth_decreased();
+        self.sync_mouse_capture_for_active_view();
         self.request_redraw();
         true
+    }
+
+    fn sync_mouse_capture_for_active_view(&mut self) {
+        let should_enable = self
+            .view_stack
+            .last()
+            .is_some_and(|view| view.wants_mouse_capture());
+        if self.mouse_capture_enabled == should_enable {
+            return;
+        }
+
+        self.mouse_capture_enabled = should_enable;
+        #[cfg(not(test))]
+        crate::tui::set_mouse_capture_enabled(should_enable);
     }
 
     fn on_active_view_complete(&mut self) {

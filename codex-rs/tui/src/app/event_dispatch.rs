@@ -670,8 +670,16 @@ impl App {
                 thread_id,
                 request_id,
                 prompt,
+                context_aware,
             } => {
-                self.prompt_pilot_enhance(app_server, thread_id, request_id, prompt);
+                self.prompt_pilot_enhance(app_server, thread_id, request_id, prompt, context_aware);
+            }
+            AppEvent::PromptPilotEnhanceProgress {
+                request_id,
+                progress,
+            } => {
+                self.chat_widget
+                    .on_prompt_pilot_enhance_progress(request_id, progress);
             }
             AppEvent::PromptPilotEnhanceResult { request_id, result } => {
                 self.chat_widget

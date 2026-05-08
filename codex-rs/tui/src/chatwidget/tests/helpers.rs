@@ -147,10 +147,22 @@ pub(super) async fn make_chatwidget_manual(
     tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
     tokio::sync::mpsc::UnboundedReceiver<Op>,
 ) {
+    make_chatwidget_manual_with_config(model_override, |_| {}).await
+}
+
+pub(super) async fn make_chatwidget_manual_with_config(
+    model_override: Option<&str>,
+    configure: impl FnOnce(&mut Config),
+) -> (
+    ChatWidget,
+    tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
+    tokio::sync::mpsc::UnboundedReceiver<Op>,
+) {
     let (tx_raw, rx) = unbounded_channel::<AppEvent>();
     let app_event_tx = AppEventSender::new(tx_raw);
     let (op_tx, op_rx) = unbounded_channel::<Op>();
     let mut cfg = test_config().await;
+    configure(&mut cfg);
     let resolved_model = model_override.map(str::to_owned).unwrap_or_else(|| {
         crate::legacy_core::test_support::get_model_offline(cfg.model.as_deref())
     });
@@ -186,6 +198,7 @@ pub(super) async fn make_chatwidget_manual(
         .service_tier
         .as_deref()
         .and_then(ServiceTier::from_request_value);
+    let prompt_pilot_ace_enabled = cfg.prompt_pilot.ace_default_enabled;
     let mut widget = ChatWidget {
         app_event_tx,
         codex_op_target: super::CodexOpTarget::Direct(op_tx),
@@ -334,6 +347,7 @@ pub(super) async fn make_chatwidget_manual(
         last_non_retry_error: None,
         next_prompt_pilot_request_id: 0,
         active_prompt_pilot_request_id: None,
+        prompt_pilot_ace_enabled,
     };
     widget.set_model(&resolved_model);
     (widget, rx, op_rx)
