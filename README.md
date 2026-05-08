@@ -54,9 +54,13 @@ ace_max_iterations = 5
 ```
 
 `base_url` defaults to `https://api.openai.com/v1` when omitted. 
+
 `api_key_env` defaults to`OPENAI_API_KEY`, set it to an empty string for local proxies that do not require Authorization.
+
 `ace_default_enabled` controls whether new TUI sessions start with ACE on. It defaults to false.
+
 `/pilot context on` and `/pilot context off` still only affect the current session.
+
 `ace_max_iterations` controls how many read-only context refinement passes ACE can use before it must produce a prompt draft. It defaults to 5 and is clamped to 1-20.
 
 ### ACE context
@@ -69,7 +73,9 @@ PromptPilot ACE is a context-aware prompt enhancement layer. It is off by defaul
 ```
 
 When ACE is on, `Ctrl+X` enhances the current composer draft with lightweight project context such as project docs, `AGENTS.md`, manifests, git status, and relevant file signals.
+
 Apply only replaces the composer draft, it does not submit the prompt. 
+
 ACE does not modify files or run commands whileenhancing the draft.
 
 ## What this fork does not change
